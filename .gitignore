@@ -1,0 +1,18 @@
+# Generated artifacts & real outputs — never commit (per Ed's Cowork instructions)
+
+# rendered map PNGs (timestamped; auto-pruned >8 wks)
+conditions_maps/
+# dated PDF briefings the run generates each Friday
+conditions_briefings/
+# optional local archive of exported Day One entries
+past-reports/
+
+# Local-only config holding personal alert identifiers (created if you scrub the docs)
+CONFIG.local.md
+
+# Python / macOS noise
+__pycache__/
+*.pyc
+.DS_Store
+
+# Note: samples/ IS committed (sample PDF + stdout for preview, since the real outputs above are ignored)

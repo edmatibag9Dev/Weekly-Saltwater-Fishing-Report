@@ -1,0 +1,29 @@
+# Weekly Saltwater Fishing Report
+
+> Local-first weekly fishing-intelligence report for Southern California & Baja. Pipeline:
+> scrape YouTube transcripts + San Diego landing fish counts + long-range boat reports (via the
+> Chrome extension) AND render a forward-looking Conditions briefing (wind / swell / SST / moon +
+> temperature-break & water-color maps) from free public APIs -> one Day One journal entry, posted
+> every Friday 9:02 AM Pacific. The Conditions section is rendered headlessly (no Chrome) by
+> conditions.py; its numbers are pasted into the report VERBATIM and its maps ship as a one-page PDF.
+
+## Start here
+- [AGENTS.md](AGENTS.md): canonical guide for AI agents — what this repo is, the file map, the Conditions data contract, how the run works, how to extend, privacy + verification gates.
+- [README.md](README.md): human quickstart and command reference.
+- [BUILD-PLAN.md](BUILD-PLAN.md): architecture, the data sources we chose and why, and the hard findings (the Day One connector can't embed attachments; maps therefore ship as a PDF).
+
+## Conditions engine
+- [conditions.py](conditions.py): self-contained generator — Open-Meteo numbers, NOAA MUR temp-break maps, VIIRS+OLCI gap-filled chlorophyll water-color maps, ephem moon, reportlab PDF. No Chrome, no login.
+- [SPEC-conditions.md](SPEC-conditions.md): the Conditions data contract — regions, coordinates, data sources, the stdout format, and the PDF briefing.
+- [requirements.txt](requirements.txt): Python dependencies for conditions.py.
+
+## Task + scheduling
+- [SKILL.md](SKILL.md): the full scheduled-task prompt — the report's operating instructions (sources, format, alerts).
+- [CLAUDE.md](CLAUDE.md): project instructions, required connectors, and known behaviors.
+- [SCHEDULE.md](SCHEDULE.md): how the weekly Cowork scheduled task is configured and edited.
+
+## Key rules
+- Conditions numbers + moon come from `conditions.py` stdout VERBATIM — never hand-write, estimate, or editorialize them.
+- Wind is reported in KNOTS. Baja offshore values are MODELED (no buoys) and labeled as such.
+- The Day One connector cannot embed attachments — maps ship as a dated PDF Ed adds via Day One's "+" button.
+- Tiered regions: always cover SoCal Bight / Northern Baja / San Clemente-Catalina; add offshore banks (Tanner/Cortez, Cedros/Guadalupe, Mag Bay, The Ridge, Alijos) ONLY when that week's reports mention them.

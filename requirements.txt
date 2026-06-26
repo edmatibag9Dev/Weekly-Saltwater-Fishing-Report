@@ -1,0 +1,7 @@
+# conditions.py dependencies.
+# Install:  pip install -r requirements.txt --break-system-packages -q
+matplotlib    # temp-break & water-color map rendering
+numpy         # grid handling
+ephem         # moon phase / illumination
+reportlab     # the one-page Conditions PDF briefing
+pillow        # image flatten (RGBA->RGB) for the PDF
