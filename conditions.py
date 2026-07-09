@@ -389,11 +389,11 @@ def main():
     out.append("")
     n_maps = sum(1 for k in ("socal_sst", "baja_sst", "socal_chl", "baja_chl") if maps.get(k) and maps[k][0])
     if pdf[0]:
-        out.append(f"📄 **Visual briefing:** the {n_maps} temp-break + water-color maps are in a one-page "
-                   "PDF saved to the project folder:")
+        out.append(f"📄 **Visual briefing:** the {n_maps} temp-break + water-color maps are embedded "
+                   "below; a one-page PDF copy is also saved to the project folder:")
         out.append(f"`{pdf[0]}`")
-        out.append("_Open it from the folder, or drag the PDF into this Day One entry to embed it "
-                   "(Day One renders manually-attached files)._")
+        out.append("_(If the maps didn't embed this run, open the PDF from the folder or drag it into "
+                   "this entry.)_")
     else:
         out.append(f"_Visual briefing PDF unavailable this run ({pdf[1]})._")
 
