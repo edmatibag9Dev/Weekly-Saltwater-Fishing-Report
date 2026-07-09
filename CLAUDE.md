@@ -37,7 +37,7 @@ The `SKILL.md` in this project folder is the **working reference copy** — keep
 | Connector | Purpose | Status Check |
 |-----------|---------|-------------|
 | Claude in Chrome extension | YouTube transcripts + SD landing fish count pages + LongRangeSportfishing | Must have Chrome open |
-| Day One MCP | Saves final **text** report (`create_journal_entry`). **Do NOT use `create_entry_with_attachments`** — its attach function is broken here (images/PDFs become blank placeholders). Maps ship as a PDF Ed adds manually via the "+" button. | Day One app must be running |
+| Day One MCP | Saves final **text** report (`create_journal_entry`). **Do NOT use `create_entry_with_attachments`** — the CLI's media import is broken in this build (records a moment but never embeds the bytes → blank placeholder). Maps are embedded by **pasting image data into the open entry** (SKILL.md PART 5 + `tools/dayone_attach.sh`); PDF is a fallback. | Day One app must be running + computer-use approved |
 | Sandbox bash + network | Runs `conditions.py` (Open-Meteo + NOAA MUR). **No Chrome or login needed** for this step | Allowlisted network reaches open-meteo.com + coastwatch.pfeg.noaa.gov |
 | Gmail MCP | Sends error alert emails (in parallel with Slack) | Gmail connected |
 | Slack MCP | Success post every run + error alert (parallel with Gmail) → #fishing-report-alerts | Slack connected + app in channel |
@@ -78,9 +78,11 @@ To add or remove channels: edit SKILL.md Part 1.
   + 2 water-color), and compiles them into a dated **PDF briefing** at
   `conditions_briefings/conditions_YYYYMMDD.pdf`. Prints the PDF's macOS path in a `<!-- BRIEFING -->`
   footer. Both folders auto-prune files older than ~8 weeks.
-- **Map delivery:** the Day One connector cannot embed attachments (blank placeholders), so the job
-  posts the text report and Ed manually drags the PDF into the entry via Day One's "+" button. The
-  Slack success post repeats the PDF path as the reminder. PDF renders on Day One desktop + mobile.
+- **Map delivery:** the Day One CLI cannot embed attachments (blank placeholders), so the job embeds
+  the four map PNGs by **pasting image data into the open entry** (SKILL.md PART 5, helper
+  `tools/dayone_attach.sh`) — this creates real, syncing photo moments. The dated PDF is still built
+  as a portable artifact + manual-drag fallback; the Slack post carries its path. Renders on desktop +
+  mobile.
 - **Regions:** Core (always) = SoCal Bight, Northern Baja, San Clemente & Catalina. Banks (modeled,
   include only when this week's reports mention them) = Tanner/Cortez, Cedros/Guadalupe, Mag Bay,
   The Ridge, Alijos Rocks.
@@ -92,7 +94,7 @@ To add or remove channels: edit SKILL.md Part 1.
 ## Known Behaviors / Notes
 
 - YouTube transcript extraction requires Chrome to be fully loaded and signed in
-- Some newer YouTube videos use a transcript format that resists extraction — those channels are noted in the report as "transcript unavailable"
+- YouTube serves two transcript-panel variants bucketed **per video** — classic (`engagement-panel-searchable-transcript`, rows `ytd-transcript-segment-renderer`) and modern (`PAmodern_transcript_view`, rows `transcript-segment-view-model`). The extractor (SKILL.md Part 1 step 4) must read **both**; a classic-only selector silently returns empty on modern-bucketed videos, which was the root cause of intermittent "transcript unavailable" false negatives (same run, some videos fine). Fixed 2026-07-09: gate on `ytInitialPlayerResponse` caption tracks (genuine-vs-failed), expand description, real pointer-click the visible (non-zero-width) "Show transcript" button, poll ~12 s, read both panel variants, retry once. Only mark "transcript unavailable" when the player has **0 caption tracks**.
 - SD landing fish count pages require clicking the current month's archive link; the URL pattern is `?landing_id=XX&month=M&year=YYYY#historicals`
 - If Chrome is not open when the task fires, it will send an alert email and stop
 - Day One entry is tagged: fishing, saltwater, weekly-report, SoCal, Baja

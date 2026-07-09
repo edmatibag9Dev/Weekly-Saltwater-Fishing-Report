@@ -27,11 +27,53 @@ All data is combined into a single structured Day One journal entry.
 1. Navigate to the channel's Videos page (append /videos to the channel URL).
 2. Identify the most recent video published within the last 7 days. Check the metadata timestamps (e.g. "1 day ago", "3 days ago"). If no new video was posted this week, skip that channel and note it in the report.
 3. Open the video page.
-4. Extract the full transcript using the Chrome extension:
-   - Find and click the "Show transcript" button using JavaScript: find all buttons/role="button" elements, find the one with text "Show transcript", click it
-   - Wait 2 seconds for the transcript panel to load
-   - Extract text from the panel: find ytd-engagement-panel-section-list-renderer whose target-id includes "transcript", use .innerText, strip timestamp lines (patterns like "X:XX" and "X minutes, Y seconds")
-   - Store in window._transcript; retrieve in 4,000-char chunks as needed (transcripts can be 15,000–25,000 chars)
+4. Extract the full transcript. **Do NOT use a bare JavaScript `.click()`, and do NOT assume the classic transcript panel.** YouTube now serves two transcript-panel variants, bucketed **per video** (so within one run some videos use one and some use the other), and a synthetic `.click()` frequently fails to fire YouTube's transcript fetch — this is the cause of the intermittent "transcript unavailable" false negatives. Follow this exact sequence:
+
+   **a. Confirm captions actually exist first (genuine-vs-failed gate).** Read the player caption tracks:
+   ```js
+   (window.ytInitialPlayerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || []).length
+   ```
+   - If this is `0`, the video genuinely has no published captions → note it as **"transcript unavailable (no captions published)"** and move on.
+   - If it is `≥ 1`, a transcript **exists**. Any empty result in the steps below is an **extraction failure to retry**, NOT "unavailable" — never silently drop it.
+
+   **b. Expand the description** so the transcript button renders: click `#description #expand` (a.k.a. `#expand.ytd-text-inline-expander`). Wait ~1 s.
+
+   **c. Click the *visible* "Show transcript" button with a REAL pointer click — verify, don't spam.** (Chrome `find` + `computer` left_click, not JS `.click()`.) There are usually **two** matching elements — one is a zero-width hidden duplicate that does nothing. Two failure modes seen in practice: the click **misses** (the button still says "Show transcript"), and a **blind second click toggles the panel closed**. So every click must be verified, never blind:
+      1. `scrollIntoView({block:'center'})` the non-zero-width button, then **screenshot** and click its on-screen center by coordinate (the DOM `getBoundingClientRect` y is ~3–4% larger than the screenshot y — multiply by ~0.96, or just click the button as seen in the screenshot).
+      2. **Verify the click registered:** re-read the button — its accessible label/text should have flipped to **"Hide transcript"**. If it still says "Show transcript," the click **missed** — re-screenshot (layout may have shifted) and click again. Do NOT click a button that already says "Hide transcript" (that closes it).
+      3. Only after the label reads "Hide transcript" do you move to the poll (step d).
+   Gate on the label, not on a fixed number of clicks — this avoids both the miss and the accidental toggle-closed.
+
+   **d. Poll up to ~12 s** for a transcript panel to populate (do NOT use a flat 2 s wait — long podcasts need longer, and the panel lazy-loads). Read whichever panel filled, handling **both** variants:
+   - **Classic** panel `engagement-panel-searchable-transcript` → segment rows are `ytd-transcript-segment-renderer`; text is in `.segment-text` (or the row's `yt-formatted-string`).
+   - **Modern** panel `PAmodern_transcript_view` → segment rows are `transcript-segment-view-model`; text is in `span.ytAttributedStringHost`.
+
+   Concatenate the per-segment **text** (do not scrape the panel's raw `.innerText` — the modern panel interleaves word-form timestamps like "25 seconds" / "17 minutes, 51 seconds" that pollute it). Reader snippet:
+   ```js
+   function readTranscript(){
+     const panels=[...document.querySelectorAll('ytd-engagement-panel-section-list-renderer')]
+       .filter(p=>/transcript/i.test(p.getAttribute('target-id')||''));
+     let best='';
+     for(const p of panels){
+       const classic=[...p.querySelectorAll('ytd-transcript-segment-renderer')]
+         .map(s=>(s.querySelector('.segment-text')||s).textContent.trim());
+       const modern=[...p.querySelectorAll('transcript-segment-view-model')]
+         .map(s=>(s.querySelector('span.ytAttributedStringHost')||{}).textContent?.trim()||'');
+       const txt=[...classic,...modern].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+       if(txt.length>best.length) best=txt;
+     }
+     return best;
+   }
+   ```
+   Consider the panel "ready" when the segment count stops increasing across two consecutive polls.
+
+   **e. Retry loop on empty (up to ~4 attempts, not just once).** If captions existed (step a) but the poll returned empty, the transcript fetch didn't fire — some videos need several tries, and occasionally the classic panel opens as a permanent empty shell. Loop:
+      1. **Close and re-open:** if the button reads "Hide transcript" but no segments rendered after ~12 s (empty shell), click once to close it, wait ~1 s, then re-click to reopen (verify the "Hide transcript" label each time as in step c) and poll again.
+      2. If the button still reads "Show transcript" (the click kept missing), re-screenshot and re-click — the button drifts as the page settles, so re-measure its position every attempt rather than reusing old coordinates.
+      3. Between attempts, a full page **reload** (then re-expand the description) clears a stuck toggle state and often succeeds where re-clicking didn't.
+      4. Give it ~4 attempts total. Only if it STILL fails, record **"transcript extraction failed (captions exist) — retry next run"** in the Sources list and the Slack summary — this flags a real bug rather than masquerading as "no transcript." A single video failing this way is NOT an alert; note it and continue with the other channels.
+
+   **f. Store** the concatenated text in `window._transcript`; retrieve in 4,000-char chunks as needed (transcripts run ~12,000–25,000 chars).
 5. Analyze the transcript for the intel categories below.
 
 ### Intel to Extract from YouTube Transcripts
@@ -154,12 +196,13 @@ screenshots cannot be saved to disk on the scheduled run.)
    `conditions_briefings/conditions_YYYYMMDD.pdf`. At the very end it prints that PDF's macOS path
    inside a `<!-- BRIEFING ... -->` comment — capture it for the Day One text and the Slack reminder.
 
-> ℹ️ **Why a PDF (not Day One image attachments):** the Day One connector's attachment function is
-> broken in this setup — it records the count but never embeds the image data, so attached PNG/JPG
-> show as blank placeholders. The job therefore does NOT attach anything via the connector. It saves
-> a self-contained PDF (maps + numbers + moon) that Ed manually drops into the journal entry using
-> Day One's "+" add-media button (verified to render on desktop and mobile). The Slack success post
-> reminds Ed with the PDF's path.
+> ℹ️ **Maps are embedded as images (PART 5); the PDF is a bundled fallback.** The Day One *CLI's*
+> attachment import is broken in this build — it records a moment but never embeds the bytes, so
+> anything attached via `create_entry_with_attachments` shows as a blank placeholder. The job instead
+> embeds the four map PNGs by **pasting image data into the open entry** (PART 5), which creates real,
+> syncing photo moments. The script still also builds the self-contained PDF (maps + numbers + moon)
+> as a portable artifact and a manual-drag fallback for runs where the GUI paste can't execute; the
+> Slack post carries its path either way.
 
 ### What it produces
 - A **Moon** line for the week (phase, % illumination, and a short bite note).
@@ -288,9 +331,58 @@ Example format:
 
 ---
 
-Save the completed report as a new Day One journal entry using **`mcp__dayone__create_journal_entry`** (text only), in the journal named "Saltwater Fishing Journal", tagged with: fishing, saltwater, weekly-report, SoCal, Baja.
+Save the completed report as a new Day One journal entry using **`mcp__dayone__create_journal_entry`** (text only), in the journal named "Saltwater Fishing Journal", tagged with: fishing, saltwater, weekly-report, SoCal, Baja. **Capture the entry UUID the tool returns — the next step (PART 5) needs it.**
 
-**Do NOT use `create_entry_with_attachments`.** The Day One connector's attachment function is broken in this setup — attached images/PDFs become blank placeholders. The Conditions section already contains the PDF's path as text; Ed adds the PDF to the entry himself with Day One's "+" add-media button. The Slack success post (below) repeats the PDF path as his reminder.
+**Do NOT use `create_entry_with_attachments`.** The Day One CLI's media import is broken in this build — it records a moment but never embeds the bytes, so attached images become blank placeholders. Embed the maps with the clipboard-paste method in PART 5 instead (verified to create real, syncing photo moments that render on desktop + mobile).
+
+---
+
+## PART 5 — Insert the Conditions maps into the entry (image embed — the working method)
+
+After the text entry is saved and you have its UUID, embed the four `conditions_maps/*.png` images
+(SoCal temp-break, SoCal water-color, Baja temp-break, Baja water-color) inline. **Skip this step
+entirely** if the Conditions section was "unavailable this run" (no maps were produced).
+
+Why this works when the connector doesn't: the Day One CLI cannot embed media in this build, but
+**pasting image data into an open entry creates a proper, syncing photo moment** (the file lands in
+`DayOnePhotos/<md5>.png` with a `![](dayone-moment://…)` marker — identical to the GUI "+" button).
+A helper script does the deterministic parts; you perform only the paste (Cmd+V) via computer-use.
+
+⚠️ **Reliability rules (verified end-to-end):**
+(a) A freshly-saved entry opens in *read* mode — you **must click into the body to enter edit mode**
+(the bottom toolbar with the paperclip / "Aa" appears) before the first paste, or the paste goes
+nowhere. (b) Once in edit mode, paste all maps **consecutively** — do NOT re-open the entry between
+maps (re-opening drops you back to read mode) and do NOT press arrow/Return keys between pastes (that
+drifts focus). (c) After every paste, verify the embedded count went up by one; if not, click the body
+once to re-focus and re-paste that one map.
+
+Helper: `tools/dayone_attach.sh` in the project folder (`FISHING_PROJECT_DIR` env var overrides the
+default path). Get the ordered map list with `bash tools/dayone_attach.sh list`.
+
+**Map 1 — open, focus, paste:**
+1. **Stage (Bash):** `bash tools/dayone_attach.sh stage "<UUID>" "<map1>"` — brings Day One to the
+   front, opens the entry, and loads map 1 onto the clipboard. Note the `BASELINE=<n>` it prints.
+2. **Enter edit mode + paste (computer-use):** `open_application "Day One"`; take a screenshot;
+   **click into the entry's body text** and confirm the edit toolbar (paperclip / "Aa") appears at the
+   bottom-right; press `cmd+down` (cursor to end), then `cmd+v`. Wait ~3 s.
+3. **Verify (Bash):** `bash tools/dayone_attach.sh count "<UUID>"` should equal `BASELINE+1`. If it
+   didn't change, click the body again and re-paste once.
+
+**Maps 2, 3, 4 — stay in edit mode (no re-open):** for each remaining map, in order:
+1. **Clipboard (Bash):** `bash tools/dayone_attach.sh clip "<map>"` — sets the clipboard only (does
+   NOT re-open the entry, so edit focus is preserved).
+2. **Paste (computer-use):** send key `cmd+v`. Wait ~3 s. Do not click or press any other keys.
+3. **Verify (Bash):** `count` should have gone up by one. If not, click into the body once to re-focus,
+   then re-paste that map.
+
+After all four, confirm `bash tools/dayone_attach.sh count "<UUID>"` returns **4** (or however many
+maps were produced this week).
+
+**Prerequisites & fallback:** this step needs Day One open and computer-use (GUI) control approved for
+the task — on the first run use **Run Now** once so Cowork stores the approval; later runs won't pause.
+If computer-use is unavailable or every paste fails, **do NOT fail the task** — the text report and the
+Conditions PDF are already saved. Post the report and let the Slack ACTION block (below) remind Ed to
+drop the PDF in manually. Embedded maps are the goal; the PDF reminder is the fallback.
 
 ---
 
@@ -306,16 +398,28 @@ Post a message to Slack using `mcp__0d87112c-54fd-4221-ad16-0fac875e1609__slack_
 :fish: *Weekly Saltwater Fishing Report — [Date] posted to Day One.*
 • Sources: YouTube [N of 6 channels with new videos] | SD Landings [4 of 4] | Long Range [N boats]
 • Skipped / unavailable: [list any channels with no new video or "transcript unavailable", or "none"]
+• Maps: [N of 4 Conditions maps embedded in the entry]
 • Top takeaway: [one-line headline from the Key Takeaways section]
-
-:round_pushpin: *ACTION — add the Conditions PDF to today's journal entry:*
-Open the file below and drag it into the entry with Day One's "+" button.
-`[full PDF path from the conditions.py <!-- BRIEFING --> footer, e.g. /Users/edmatibag/Documents/Claude/Projects/Weekly Saltwater Fishing Report/conditions_briefings/conditions_YYYYMMDD.pdf]`
-(On Mac: Finder → Cmd+Shift+G → paste the path.)
 — Cowork Automated Alert
 ```
 
-Fill the bracketed fields from the actual run; paste the real PDF path from the script's `<!-- BRIEFING -->` footer into the code span (Slack shows it as copyable text — local file paths are not clickable links, so leave it as a plain path, not a `<file://…>` link). If the Conditions PDF was unavailable this run, drop the ACTION block. If the Slack post fails, do not treat it as a task failure — the report is already saved; simply note the Slack failure and continue.
+If **all four maps embedded** (PART 5 succeeded), that's the whole message — no action needed from Ed.
+
+**Only if one or more maps did NOT embed** (PART 5 fell back), append this ACTION block so Ed can drop
+the PDF in manually:
+
+```
+:round_pushpin: *ACTION — maps didn't auto-embed this run; add the Conditions PDF to today's entry:*
+Open the file below and drag it into the entry with Day One's "+" button.
+`[full PDF path from the conditions.py <!-- BRIEFING --> footer, e.g. /Users/edmatibag/Documents/Claude/Projects/Weekly Saltwater Fishing Report/conditions_briefings/conditions_YYYYMMDD.pdf]`
+(On Mac: Finder → Cmd+Shift+G → paste the path.)
+```
+
+Fill the bracketed fields from the actual run; paste the real PDF path from the script's
+`<!-- BRIEFING -->` footer into the code span (Slack shows it as copyable text — local file paths are
+not clickable links, so leave it as a plain path, not a `<file://…>` link). If the Conditions section
+was unavailable this run (no maps), drop both the Maps line and the ACTION block. If the Slack post
+fails, do not treat it as a task failure — the report is already saved; note the Slack failure and continue.
 
 ---
 
