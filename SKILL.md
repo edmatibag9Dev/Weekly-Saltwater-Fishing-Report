@@ -346,43 +346,48 @@ entirely** if the Conditions section was "unavailable this run" (no maps were pr
 Why this works when the connector doesn't: the Day One CLI cannot embed media in this build, but
 **pasting image data into an open entry creates a proper, syncing photo moment** (the file lands in
 `DayOnePhotos/<md5>.png` with a `![](dayone-moment://…)` marker — identical to the GUI "+" button).
-A helper script does the deterministic parts; you perform only the paste (Cmd+V) via computer-use.
 
-⚠️ **Reliability rules (verified end-to-end):**
-(a) A freshly-saved entry opens in *read* mode — you **must click into the body to enter edit mode**
-(the bottom toolbar with the paperclip / "Aa" appears) before the first paste, or the paste goes
-nowhere. (b) Once in edit mode, paste all maps **consecutively** — do NOT re-open the entry between
-maps (re-opening drops you back to read mode) and do NOT press arrow/Return keys between pastes (that
-drifts focus). (c) After every paste, verify the embedded count went up by one; if not, click the body
-once to re-focus and re-paste that one map.
+**This step is fully automated — no computer-use required.** The helper script uses
+`mcp__Control_your_Mac__osascript` to open the entry, load each image onto the clipboard, and
+send Cmd+V via System Events. This works because Claude (the desktop app) has Accessibility
+permission granted in System Settings → Privacy & Security → Accessibility. **Do not remove that
+Accessibility grant** or this step will silently fail.
 
 Helper: `tools/dayone_attach.sh` in the project folder (`FISHING_PROJECT_DIR` env var overrides the
-default path). Get the ordered map list with `bash tools/dayone_attach.sh list`.
+default path). Run ALL four commands via `mcp__Control_your_Mac__osascript` using `do shell script`.
 
-**Map 1 — open, focus, paste:**
-1. **Stage (Bash):** `bash tools/dayone_attach.sh stage "<UUID>" "<map1>"` — brings Day One to the
-   front, opens the entry, and loads map 1 onto the clipboard. Note the `BASELINE=<n>` it prints.
-2. **Enter edit mode + paste (computer-use):** `open_application "Day One"`; take a screenshot;
-   **click into the entry's body text** and confirm the edit toolbar (paperclip / "Aa") appears at the
-   bottom-right; press `cmd+down` (cursor to end), then `cmd+v`. Wait ~3 s.
-3. **Verify (Bash):** `bash tools/dayone_attach.sh count "<UUID>"` should equal `BASELINE+1`. If it
-   didn't change, click the body again and re-paste once.
+**Map 1 — open entry, focus, paste:**
+```bash
+bash tools/dayone_attach.sh paste "<UUID>" "<map1_path>"
+# Prints PASTED=<n>. Expected: PASTED=1 (was 0 before).
+```
+This opens Day One, navigates to the entry, moves cursor to end, then pastes via System Events.
 
-**Maps 2, 3, 4 — stay in edit mode (no re-open):** for each remaining map, in order:
-1. **Clipboard (Bash):** `bash tools/dayone_attach.sh clip "<map>"` — sets the clipboard only (does
-   NOT re-open the entry, so edit focus is preserved).
-2. **Paste (computer-use):** send key `cmd+v`. Wait ~3 s. Do not click or press any other keys.
-3. **Verify (Bash):** `count` should have gone up by one. If not, click into the body once to re-focus,
-   then re-paste that map.
+**Maps 2, 3, 4 — paste without reopening (edit focus stays):**
+```bash
+bash tools/dayone_attach.sh clip_paste "<UUID>" "<map2_path>"
+bash tools/dayone_attach.sh clip_paste "<UUID>" "<map3_path>"
+bash tools/dayone_attach.sh clip_paste "<UUID>" "<map4_path>"
+# Each prints PASTED=<n>. Count should increment by 1 each time.
+```
 
-After all four, confirm `bash tools/dayone_attach.sh count "<UUID>"` returns **4** (or however many
-maps were produced this week).
+**Verify all four embedded:**
+```bash
+bash tools/dayone_attach.sh count "<UUID>"
+# Should return 4.
+```
+If any count fails to increment, re-run that map's `paste` or `clip_paste` command once. If it still
+fails after one retry, log the miss and continue — the text report and PDF are already saved.
 
-**Prerequisites & fallback:** this step needs Day One open and computer-use (GUI) control approved for
-the task — on the first run use **Run Now** once so Cowork stores the approval; later runs won't pause.
-If computer-use is unavailable or every paste fails, **do NOT fail the task** — the text report and the
-Conditions PDF are already saved. Post the report and let the Slack ACTION block (below) remind Ed to
-drop the PDF in manually. Embedded maps are the goal; the PDF reminder is the fallback.
+**Get the ordered map paths:**
+```bash
+bash tools/dayone_attach.sh list
+# Prints 4 lines: socal_temp_break, socal_water_color, baja_temp_break, baja_water_color (newest each)
+```
+
+**Fallback:** If every paste fails (e.g. Day One not running, Accessibility revoked), **do NOT fail
+the task** — post the report and include the Slack ACTION block (below) so Ed can drag the PDF in
+manually. Embedded maps are the goal; the PDF reminder is the safety net.
 
 ---
 

@@ -1,29 +1,33 @@
 #!/bin/bash
-# dayone_attach.sh — helper for inserting the weekly Conditions map images into a
-# Day One entry via the clipboard-paste path (the Day One CLI's --attachments import
-# is broken in this build: it records a moment but never embeds the bytes, leaving a
-# blank placeholder. Pasting image data through the GUI creates a real, syncing moment).
+# dayone_attach.sh — inserts weekly Conditions map images into a Day One entry via
+# clipboard paste. The Day One CLI's --attachments import is broken (records a moment
+# but never embeds bytes → blank placeholder). Pasting image data via System Events
+# creates a real, syncing photo moment identical to using the GUI "+" button.
 #
-# This script does only the DETERMINISTIC parts — it cannot send the Cmd+V keystroke
-# itself (macOS blocks osascript System-Events keystrokes without an Accessibility
-# grant). The caller (the Cowork agent) performs the paste via computer-use after
-# `stage`, then calls `count` to verify.
+# REQUIRES: Claude desktop app must have Accessibility permission granted in
+# System Settings → Privacy & Security → Accessibility. Without it, System Events
+# keystrokes are blocked and paste silently fails.
 #
 # Subcommands:
-#   list                       Print the 4 newest Conditions map PNGs, in insert order.
-#   count <ENTRY_UUID>         Print the number of embedded photos (ZHASDATA=1) on the entry.
-#   stage <ENTRY_UUID> <IMG>   Open the entry in edit mode + load IMG onto the clipboard,
-#                              then print "BASELINE=<n>" (embedded-photo count before paste).
-#                              Use for the FIRST map only — opening focuses the entry. The caller
-#                              still must click into the body to enter edit mode before the paste.
-#   clip <IMG>                 Load IMG onto the clipboard only — does NOT re-open the entry (which
-#                              would reset edit mode). Use for maps 2..N while the editor stays focused.
+#   list                          Print the 4 newest Conditions map PNGs, in insert order.
+#   count <ENTRY_UUID>            Print the number of embedded photos (ZHASDATA=1) on the entry.
+#   paste <ENTRY_UUID> <IMG>      Open entry, move cursor to end, load IMG to clipboard, paste
+#                                 via System Events, wait for embed. Prints "PASTED=<new_count>".
+#                                 Use for the FIRST map — opens/focuses the entry.
+#   clip_paste <ENTRY_UUID> <IMG> Load IMG to clipboard and paste via System Events WITHOUT
+#                                 reopening the entry (preserves edit focus). Prints "PASTED=<new_count>".
+#                                 Use for maps 2..N.
 #
-# Usage in the job (per map):
-#   base=$(dayone_attach.sh stage "$UUID" "$IMG" | sed -n 's/BASELINE=//p')
-#   # -> computer-use: open_application "Day One"; key "cmd+v"; wait 3s
-#   now=$(dayone_attach.sh count "$UUID")
-#   # if now == base, retry the stage+paste once.
+#   -- Legacy subcommands (kept for backward compat) --
+#   stage <ENTRY_UUID> <IMG>      Open entry + load clipboard only. Prints "BASELINE=<n>". No paste.
+#   clip <IMG>                    Load clipboard only. No paste.
+#
+# Fully automated usage (no computer-use needed — call via mcp__Control_your_Mac__osascript):
+#   bash tools/dayone_attach.sh paste      "$UUID" "$MAP1"
+#   bash tools/dayone_attach.sh clip_paste "$UUID" "$MAP2"
+#   bash tools/dayone_attach.sh clip_paste "$UUID" "$MAP3"
+#   bash tools/dayone_attach.sh clip_paste "$UUID" "$MAP4"
+#   bash tools/dayone_attach.sh count "$UUID"   # verify == 4
 
 set -euo pipefail
 
@@ -62,7 +66,35 @@ case "$cmd" in
     osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
     echo "CLIPPED=$(basename "$img")"
     ;;
+  paste)
+    # Open entry, load image to clipboard, paste via System Events — no computer-use needed.
+    uuid="${2:?entry uuid required}"
+    img="${3:?image path required}"
+    [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
+    open -a "Day One" 2>/dev/null || true
+    sleep 1
+    open "dayone://edit?entryId=$uuid"
+    sleep 3
+    osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
+    sleep 0.5
+    osascript -e 'tell application "System Events" to tell process "Day One" to keystroke "v" using command down'
+    sleep 4
+    echo "PASTED=$(embedded_count "$uuid")"
+    ;;
+  clip_paste)
+    # Load image to clipboard and paste via System Events — does NOT reopen the entry.
+    # Use for maps 2..N while Day One editor is already focused on the entry.
+    uuid="${2:?entry uuid required}"
+    img="${3:?image path required}"
+    [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
+    osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
+    sleep 0.5
+    osascript -e 'tell application "System Events" to tell process "Day One" to keystroke "v" using command down'
+    sleep 4
+    echo "PASTED=$(embedded_count "$uuid")"
+    ;;
   stage)
+    # Legacy: open entry + load clipboard. Caller must send Cmd+V externally.
     uuid="${2:?entry uuid required}"
     img="${3:?image path required}"
     [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
@@ -75,7 +107,7 @@ case "$cmd" in
     echo "BASELINE=$base"
     ;;
   *)
-    echo "usage: $0 {list|count <uuid>|stage <uuid> <img>|clip <img>}" >&2
+    echo "usage: $0 {list|count <uuid>|paste <uuid> <img>|clip_paste <uuid> <img>|stage <uuid> <img>|clip <img>}" >&2
     exit 2
     ;;
 esac
