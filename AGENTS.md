@@ -32,9 +32,13 @@ retrospective catch intel below it.
 | `SCHEDULE.md` | yes | How the weekly Cowork scheduled task is configured/edited. |
 | `CHANGELOG.md` | yes | Notable changes (Keep a Changelog). |
 | `CONTRIBUTING.md` | yes | Ed's global commit + doc standards. |
+| `.gitignore` | yes | Excludes generated output + real/personal data (maps, briefings, archives, `CONFIG.local.md`, `__pycache__`); keeps `samples/` committed. |
 | `conditions.py` | yes | The Conditions engine — numbers, maps, moon, PDF. No Chrome, no login. |
 | `requirements.txt` | yes | Python deps for `conditions.py`. |
 | `SETUP.md` | yes | Connector setup / troubleshooting. |
+| `samples/conditions_sample.txt` | yes | Committed sample of `conditions.py` stdout (a real Conditions briefing text) so the repo previews without the gitignored live output. |
+| `samples/conditions_sample.pdf` | yes | Committed sample one-page Conditions briefing PDF (temp-break + water-color maps) — reference for what the live `conditions_briefings/` PDFs look like. |
+| `tools/dayone_attach.sh` | yes | Shell helper that pastes the Conditions map PNGs into a Day One entry via clipboard/System Events, working around the broken Day One connector attachment path. |
 | `conditions_maps/` | **no (gitignored)** | Rendered map PNGs (timestamped; auto-pruned >8 wks). |
 | `conditions_briefings/` | **no (gitignored)** | Dated PDF briefings generated each run. |
 | `past-reports/` | **no (gitignored)** | Optional local archive of exported entries. |
