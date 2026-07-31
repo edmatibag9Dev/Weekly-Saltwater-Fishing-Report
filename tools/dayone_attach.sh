@@ -4,9 +4,13 @@
 # but never embeds bytes → blank placeholder). Pasting image data via System Events
 # creates a real, syncing photo moment identical to using the GUI "+" button.
 #
-# REQUIRES: Claude desktop app must have Accessibility permission granted in
-# System Settings → Privacy & Security → Accessibility. Without it, System Events
-# keystrokes are blocked and paste silently fails.
+# REQUIRES: two macOS grants for the host app — Accessibility (System Settings →
+# Privacy & Security → Accessibility) AND Automation for Apple Events to System
+# Events / Day One. Without them System Events keystrokes are blocked and paste
+# silently fails. Both were verified present on 2026-07-31, so treat a failed
+# paste as a focus/timing problem first, not a permissions problem; confirm with
+#   osascript -e 'tell application "System Events" to return name of first application process'
+# which returns a process name when Automation is granted.
 #
 # Subcommands:
 #   list                          Print this run's Conditions map PNGs, in insert order. Only maps

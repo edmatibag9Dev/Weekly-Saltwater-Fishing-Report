@@ -95,9 +95,10 @@ All sources are public HTTP with no keys or logins.
 - The Day One connector cannot embed attachments, so maps are embedded by pasting image data into
   the saved entry via `tools/dayone_attach.sh` (`paste` / `clip_paste`). Those subcommands send the
   keystroke themselves through `osascript`, so the step runs from Bash and needs **no computer-use
-  grant** — which matters because computer-use access cannot be approved during a scheduled run. The
-  one prerequisite is macOS **Accessibility** permission for the host app. If the paste fails, the
-  run still posts and the Slack message carries the PDF path as a manual fallback.
+  grant** — which matters because computer-use access cannot be approved during a scheduled run. It
+  does need two macOS grants, **Accessibility** and **Automation** (Apple Events → System Events /
+  Day One); both were verified present on 2026-07-31 and are not currently a blocker. If the paste
+  fails, the run still posts and the Slack message carries the PDF path as a manual fallback.
 - Conditions data is satellite/model-derived: NOAA MUR SST lags ~1 day, chlorophyll ~2 days on the
   near-real-time product (~11 on the science-quality backstops), and Baja offshore has no buoys —
   useful for planning, not ground truth.

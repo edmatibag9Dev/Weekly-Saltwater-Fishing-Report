@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-07-31b] — Correct the PART 5 permissions claim
+
+### Fixed
+- **The "remaining prerequisite" documented earlier the same day was wrong.** The prior entry, the
+  README, CLAUDE.md and SKILL.md all stated that macOS **Accessibility** permission was the one
+  outstanding blocker for PART 5 and that Ed still had to grant it. Testing disproved this: the
+  Claude entries are already enabled in Privacy & Security → Accessibility, and an `osascript` probe
+  (`tell application "System Events" to return name of first application process`) returned
+  `loginwindow` with **no permission prompt**, confirming Apple Events **Automation** is granted too.
+  The claim had been inferred from the helper script's header comment rather than tested. All four
+  documents now record both grants as verified present on 2026-07-31 and instruct future runs not to
+  report a permissions problem unless `PASTED=` actually fails to advance.
+- Consequence: the only cause of the 2026-07-31 map-embed failure was the stale SKILL.md routing
+  PART 5 through `request_access`, which is fixed in the previous entry. Nothing is pending on Ed.
+
 ## [2026-07-31] — Restore water-color maps, unblock PART 5, fix transcript reader
 
 ### Fixed

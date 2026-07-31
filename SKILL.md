@@ -403,10 +403,16 @@ bash tools/dayone_attach.sh count "$UUID"                     # must equal ${#MA
 Each `paste` / `clip_paste` prints `PASTED=<new_count>`. That count must increase by one per map; if
 one doesn't move, re-run that single `clip_paste` once before giving up.
 
-**Prerequisite:** System Events keystrokes require the host app to hold macOS **Accessibility**
-permission (System Settings → Privacy & Security → Accessibility). Without it the keystroke is
-blocked and `PASTED=` will not advance — that is the one failure mode to expect, and it is a
-one-time manual grant Ed must make; it cannot be granted from inside a run.
+**Prerequisites — already satisfied on this machine; do not treat them as blockers.** System Events
+keystrokes need two separate macOS grants: **Accessibility** (Privacy & Security → Accessibility) and
+**Automation** for Apple Events to System Events / Day One (Privacy & Security → Automation). Both
+were **verified present on 2026-07-31**: the Claude entries are enabled in Accessibility, and an
+`osascript` probe against System Events returned normally with no permission prompt. So do **not**
+report a permissions problem, and do not ask Ed to grant anything, unless `PASTED=` actually fails to
+advance. If it does fail, re-probe with
+`osascript -e 'tell application "System Events" to return name of first application process'` — a
+permission dialog or an error there (rather than a process name) is the only real evidence of a
+permissions gap.
 
 **Fallback:** if the counts never advance, **do NOT fail the task** — the text report and the
 Conditions PDF are already saved. Post the report and let the Slack ACTION block (below) remind Ed to

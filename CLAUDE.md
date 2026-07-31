@@ -90,8 +90,11 @@ To add or remove channels: edit SKILL.md Part 1.
   MCP: `request_access` is refused outright on a scheduled run ("can't be approved during a scheduled
   run"), and no prior **Run Now** grant persists — that assumption cost the 2026-07-31 run its maps.
   The legacy `stage`/`clip` subcommands only load the clipboard and still need a GUI caller; avoid them.
-  The one genuine prerequisite is macOS **Accessibility** permission for the host app, which only Ed
-  can grant (System Settings → Privacy & Security → Accessibility).
+  Two macOS grants are required — **Accessibility** and **Automation** (Apple Events → System Events
+  / Day One). Both were **verified present on 2026-07-31** (Claude entries enabled in Accessibility;
+  an `osascript` System Events probe returned normally with no prompt). Do not report a permissions
+  problem or ask Ed to toggle anything unless `PASTED=` actually fails to advance — an earlier note
+  here claimed Accessibility was the outstanding blocker, which testing disproved.
 - **Embed only this run's maps:** `dayone_attach.sh list` is date-scoped to today's stamp and prints
   `MISSING:<file>` on stderr for any map not produced. It previously picked the newest file of each
   kind regardless of date, which would have embedded two-week-old water-color maps into the
