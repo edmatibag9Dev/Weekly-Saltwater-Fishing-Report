@@ -43,12 +43,15 @@ the `📄 Visual briefing` line), followed by a machine-readable footer:
 -->
 ```
 
-**2. `conditions_maps/*_YYYYMMDD.png`** — four maps: `socal_temp_break`, `baja_temp_break`,
-`socal_water_color`, `baja_water_color`.
+**2. `conditions_maps/*_YYYYMMDD.png`** — up to four maps: `socal_temp_break`, `baja_temp_break`,
+`socal_water_color`, `baja_water_color`. Four is the healthy state; each map is produced
+independently, so an upstream failure drops that one map and leaves the rest. Consumers must handle
+a partial set and must never substitute an earlier date's render (`tools/dayone_attach.sh list` is
+date-scoped for exactly this reason).
 
-**3. `conditions_briefings/conditions_YYYYMMDD.pdf`** — one page of region tables + a page of the
-four maps. Brand: navy `#2B4C7E`, teal `#2C7A6B`; SST uses `turbo`, chlorophyll a blue→green ramp —
-both kept distinct from brand teal.
+**3. `conditions_briefings/conditions_YYYYMMDD.pdf`** — one page of region tables + a page of
+whichever maps were produced. Brand: navy `#2B4C7E`, teal `#2C7A6B`; SST uses `turbo`, chlorophyll a
+blue→green ramp — both kept distinct from brand teal.
 
 ## Invariants
 

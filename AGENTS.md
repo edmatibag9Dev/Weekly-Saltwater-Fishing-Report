@@ -134,5 +134,12 @@ through Day One's own "+" button renders fine. Therefore:
    `conditions_briefings/conditions_YYYYMMDD.pdf`.
 2. Wind is in knots; every region row has wind + swell + SST; Baja offshore rows say "modeled".
 3. The `<!-- BRIEFING -->` footer contains a valid macOS PDF path.
-4. The four maps render (2 temp-break + 2 water-color) and old files >8 weeks are pruned.
+4. Maps render for the current date stamp and old files >8 weeks are pruned. **All four** (2
+   temp-break + 2 water-color) is the healthy state and what a normal run must produce — but fewer is
+   a legitimate degraded result when an upstream source is down, so treat a shortfall as a signal to
+   investigate, not an automatic fail. Confirm which succeeded rather than counting files:
+   `python3 -c "import conditions as c; print(c.build_maps())"` reports a path per map or the
+   exception that killed it. A map that fails two runs running is a real defect — check whether the
+   ERDDAP dataset ID was retired (the 2 km chlorophyll product was, in July 2026) before assuming a
+   transient outage.
 5. The Day One save uses `create_journal_entry` (text), NOT `create_entry_with_attachments`.
