@@ -11,7 +11,7 @@ The data/interface contract for the weekly Conditions briefing. Anything that co
 | Swell (ft / s / dir) | Open-Meteo Marine API | `swell_wave_height_max`, `swell_wave_period_max`, `wave_direction_dominant` |
 | SST (°F) | Open-Meteo Marine API (numbers) | `sea_surface_temperature_max/min` |
 | Temp-break maps | NOAA CoastWatch ERDDAP | `jplMURSST41` (MUR 1 km SST, ~1-day lag) |
-| Water-color maps | NOAA CoastWatch ERDDAP | `noaacwNPPN20S3ASCIDINEOF2kmDaily` (VIIRS+OLCI DINEOF gap-filled chlorophyll, ~10-day lag) |
+| Water-color maps | NOAA CoastWatch ERDDAP | `CHL_DATASETS` chain in `conditions.py`, first that answers: `noaacwNPPN20VIIRSDINEOFDaily` (NRT 9 km, ~2-day lag) → `noaacwNPPN20S3ASCIDINEOFDaily` (science, VIIRS+OLCI 9 km, ~11-day lag) → `noaacwNPPN20VIIRSSCIDINEOFDaily`. All DINEOF gap-filled. Dataset + lag are printed under each rendered map. **`noaacwNPPN20S3ASCIDINEOF2kmDaily` is retired (404) — do not reintroduce it.** |
 | Moon | `ephem` | phase, % illumination, next full/new |
 
 Forecast horizon: 7 days from run date. ERDDAP requests send a browser `User-Agent`.

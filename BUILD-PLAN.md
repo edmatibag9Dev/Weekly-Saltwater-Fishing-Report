@@ -14,7 +14,7 @@ landings + long-range scraping) predates this and is specified in SKILL.md Parts
 |---|---|---|
 | Conditions numbers | **Open-Meteo Marine + Weather APIs** | Free, no key, global (covers deep Baja), JSON — won't break like a scrape. Verified live at Alijos Rocks & Tanner/Cortez. |
 | Temp-break maps | **NOAA MUR 1 km SST** (`jplMURSST41`, CoastWatch ERDDAP) | Same SST source the paid tools use; rendered headlessly with matplotlib. |
-| Water-color maps | **VIIRS+OLCI DINEOF gap-filled chlorophyll** (`noaacwNPPN20S3ASCIDINEOF2kmDaily`) | Raw daily VIIRS is ~60% cloud over SoCal in June; the L4 gap-filled blend gives clean coverage (~10-day science lag — fine for a slow signal). |
+| Water-color maps | **DINEOF gap-filled chlorophyll**, `CHL_DATASETS` chain (NRT 9 km → science 9 km) | Raw daily VIIRS is ~60% cloud over SoCal in June; the L4 gap-filled blend gives clean coverage. Originally `noaacwNPPN20S3ASCIDINEOF2kmDaily` (2 km, ~10-day lag) — **retired by NOAA 2026-07, now 404** — replaced 2026-07-31 by a fallback chain leading with the near-real-time 9 km product (~2-day lag). |
 | Moon | **ephem** | Exact phase/illumination + next full/new, no network. |
 | Map delivery | **One-page PDF** (reportlab) Ed adds via Day One "+" | The Day One connector can't embed attachments (see §3). PDF renders on desktop + mobile. |
 | Region coverage | **Tiered** | Core nearshore always; offshore banks only when that week's reports mention them — avoids publishing model noise for water nobody fished. |

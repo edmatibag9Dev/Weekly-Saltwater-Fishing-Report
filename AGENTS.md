@@ -111,8 +111,13 @@ through Day One's own "+" button renders fine. Therefore:
   `build_maps()`. Update SPEC-conditions.md.
 - **Add a YouTube channel / SD landing:** edit SKILL.md Parts 1–2 (and CLAUDE.md's monitored lists),
   then re-sync the live task (SCHEDULE.md).
-- **Swap a data source:** numbers = Open-Meteo; temp-break = NOAA MUR (`jplMURSST41`); water-color =
-  `noaacwNPPN20S3ASCIDINEOF2kmDaily`. All via public HTTP — no keys. Keep the verbatim/no-improvise rule.
+- **Swap a data source:** numbers = Open-Meteo; temp-break = NOAA MUR (`jplMURSST41`, served only by
+  `coastwatch.pfeg.noaa.gov`); water-color = the `CHL_DATASETS` fallback chain in `conditions.py`
+  (NRT 9 km first, science 9 km as backstops). All via public HTTP — no keys. Keep the
+  verbatim/no-improvise rule. **ERDDAP dataset IDs get retired without notice** — the old 2 km
+  `noaacwNPPN20S3ASCIDINEOF2kmDaily` began 404ing and silently cost a run both water-color maps.
+  Prefer extending the chain over replacing it, and check a missing map against the live catalog
+  (`/erddap/search/index.json?searchFor=…`) before writing it off as a transient outage.
 - **Change the PDF look:** `build_pdf()` in `conditions.py` (brand: navy `#2B4C7E`, teal `#2C7A6B`;
   keep SST/chlorophyll data palettes separate from brand teal).
 

@@ -5,6 +5,59 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-07-31] — Restore water-color maps, unblock PART 5, fix transcript reader
+
+### Fixed
+- **Water-color (chlorophyll) maps returned nothing — NOAA retired the dataset.**
+  `noaacwNPPN20S3ASCIDINEOF2kmDaily` now returns **HTTP 404**; the failure was swallowed by
+  `build_maps`' per-map `try/except`, so the 2026-07-31 run silently shipped 2 maps instead of 4
+  and reported it as ordinary graceful degrade. Replaced the single `CHL_DS` constant with an
+  ordered `CHL_DATASETS` fallback chain over the surviving 9 km products, tried in order until one
+  answers: `noaacwNPPN20VIIRSDINEOFDaily` (near-real-time, ~2-day lag) →
+  `noaacwNPPN20S3ASCIDINEOFDaily` (science, VIIRS+OLCI, ~11-day lag) →
+  `noaacwNPPN20VIIRSSCIDINEOFDaily`. NRT leads deliberately: a forward-looking weekly briefing is
+  better served by 2-day-old water colour than 11-day-old. `fetch_chl` now also rejects an
+  empty or all-NaN grid instead of rendering a blank map, and raises only if **every** dataset fails.
+- **Map footers now name the dataset and its lag** (`… · near-real-time 9 km · 2026-07-29 (2-day lag)`)
+  rather than hardcoding a sensor string, so a silent product substitution can't be mistaken for
+  fresh data. Chlorophyll stride dropped 2/4 → 1 because the surviving grids are 9 km, not 2 km.
+- **Intermittent 503s silently dropped temp-break maps.** `coastwatch.pfeg.noaa.gov` — the only host
+  serving `jplMURSST41` (the newer `coastwatch.noaa.gov` 404s for it, so a mirror isn't an option) —
+  failed ~1 call in 4 under load. Added backoff retry (4 attempts) to `_urlopen`, failing fast on
+  permanent 4xx. Verified 4/4 maps across consecutive runs, where the prior code produced 3/4.
+- **PART 5 was routed through a permission that cannot exist on a scheduled run.** SKILL.md told the
+  run to obtain computer-use (GUI) access, but `request_access` is refused outright during scheduled
+  runs and the documented "use Run Now once and Cowork stores the approval" claim is false — the
+  session allowlist comes back empty. Meanwhile `tools/dayone_attach.sh` had **already** grown
+  `paste`/`clip_paste` subcommands that issue Cmd+V themselves via `osascript` + System Events; only
+  the docs still described the legacy `stage`/`clip` + GUI flow. Rewrote PART 5 around the Bash-only
+  path, with the real remaining prerequisite (macOS Accessibility permission, a one-time manual grant)
+  stated plainly.
+- **`dayone_attach.sh list` could embed stale maps.** `newest_map()` used `ls -t <key>_*.png | head -1`,
+  i.e. newest match of any date, so on 2026-07-31 — with the chlorophyll source down — it offered the
+  **2026-07-14** water-color maps for embedding into a report dated two weeks later. Now date-scoped to
+  today's stamp (`FISHING_MAP_STAMP` overrides for replays), printing `MISSING:<file>` to stderr and
+  emitting nothing for absent maps. Also fixed a `set -e` abort: the lookup returned non-zero for a
+  missing file, which killed the whole `list` loop on the first gap.
+- **Transcript reader missed a third panel variant.** The step-4 snippet filtered panels on
+  `/transcript/i.test(target-id)`, but the populated panel on the Fisherman's Landing video had
+  `target-id = null` — so the reader returned empty through four retries while the transcript was
+  fully rendered, producing a bogus "extraction failed". Panels are now selected by **whether they
+  contain segment rows**, which is variant-agnostic, with a document-level last resort. Added an
+  explicit pre-failure sanity check on the raw segment-row count.
+- **Replaced the chunked-transcript retrieval guidance.** Step f said to pull `window._transcript` in
+  4,000-char chunks; `javascript_tool` actually truncates its return at ~1,000 chars, making that 20+
+  round trips per video with silent-truncation risk. Now: use the reader snippet as the readiness
+  probe, then one `get_page_text` call for the content.
+
+### Changed
+- Synced the project's reference `SKILL.md` from the live scheduled copy, which had drifted **ahead**
+  of it (PART 4 "never hand-write Conditions" block, landing IDs, PDF briefing section were all
+  missing from the project copy). The two are now byte-identical.
+- CLAUDE.md: corrected the Day One connector prerequisite (Accessibility, not computer-use), the
+  chlorophyll data-source description, and the `pip` line (was missing `reportlab`/`pillow`, whose
+  absence silently degrades the moon line and kills the PDF — hit on this run's first attempt).
+
 ## [2026-07-09] — Fix intermittent YouTube "transcript unavailable" false negatives
 
 ### Fixed

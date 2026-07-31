@@ -9,7 +9,10 @@
 # keystrokes are blocked and paste silently fails.
 #
 # Subcommands:
-#   list                          Print the 4 newest Conditions map PNGs, in insert order.
+#   list                          Print this run's Conditions map PNGs, in insert order. Only maps
+#                                 stamped with today's date qualify (override via FISHING_MAP_STAMP);
+#                                 anything missing prints MISSING:<file> to stderr and is skipped, so
+#                                 a stale render is never embedded in a fresh report.
 #   count <ENTRY_UUID>            Print the number of embedded photos (ZHASDATA=1) on the entry.
 #   paste <ENTRY_UUID> <IMG>      Open entry, move cursor to end, load IMG to clipboard, paste
 #                                 via System Events, wait for embed. Prints "PASTED=<new_count>".
@@ -38,9 +41,23 @@ DB="$HOME/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/DayOne.s
 # Insert order: SoCal temp-break, SoCal water-color, Baja temp-break, Baja water-color.
 MAP_KEYS=(socal_temp_break socal_water_color baja_temp_break baja_water_color)
 
-newest_map() {
-  # newest PNG whose name starts with the given key
-  ls -t "$MAPS_DIR/$1"_*.png 2>/dev/null | head -1
+# Only maps rendered for THIS run are eligible. Override for a backfill/replay.
+STAMP="${FISHING_MAP_STAMP:-$(date +%Y%m%d)}"
+
+map_for_stamp() {
+  # PNG for the given key at STAMP only.
+  #
+  # This used to be `ls -t "$MAPS_DIR/$1"_*.png | head -1` (newest match, any date), which
+  # silently returned a WEEKS-OLD render whenever a map source failed for the current run —
+  # e.g. on 2026-07-31 the chlorophyll dataset 404'd and `list` happily offered the
+  # 2026-07-14 water-color maps for embedding, which would have put stale water colour in a
+  # report dated two weeks later. Never fall back to an older render: a missing map must
+  # stay missing so the caller embeds only what was actually produced this week.
+  local f="$MAPS_DIR/$1_$STAMP.png"
+  [ -f "$f" ] && echo "$f"
+  # Always succeed: under `set -e` a failing command substitution in an assignment aborts
+  # the caller, which would make `list` exit silently on the first absent map.
+  return 0
 }
 
 embedded_count() {
@@ -53,8 +70,8 @@ cmd="${1:-}"
 case "$cmd" in
   list)
     for k in "${MAP_KEYS[@]}"; do
-      f="$(newest_map "$k")"
-      [ -n "$f" ] && echo "$f" || echo "MISSING:$k" >&2
+      f="$(map_for_stamp "$k")"
+      [ -n "$f" ] && echo "$f" || echo "MISSING:${k}_${STAMP}.png" >&2
     done
     ;;
   count)

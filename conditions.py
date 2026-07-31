@@ -17,7 +17,7 @@ still prints and the maps are reported as unavailable.
 Run deps once per environment:
   pip install matplotlib numpy ephem --break-system-packages -q
 """
-import os, sys, math, csv, io, json, re, glob, datetime, urllib.request
+import os, sys, math, csv, io, json, re, glob, time, datetime, urllib.request, urllib.error
 
 # macOS path to this project (used for the Day One attachment paths the run passes
 # to the Day One MCP). The script itself writes to the sandbox-mounted equivalent.
@@ -46,12 +46,45 @@ def prune_old(days=56):
             except OSError:
                 pass
 
-# VIIRS SNPP + NOAA-20 + Sentinel-3A OLCI, DINEOF gap-filled chlorophyll (daily, 2 km).
-# Gap-filled = clean single-frame coverage (clouds interpolated). ~10-day science lag.
-CHL_DS = "noaacwNPPN20S3ASCIDINEOF2kmDaily"
+# DINEOF gap-filled chlorophyll. Gap-filled = clean single-frame coverage (clouds interpolated).
+# Tried in order; the first dataset that answers wins, and its label is printed on the map footer
+# so the rendered lag is always visible rather than assumed.
+#
+# NOTE 2026-07-31: the former 2 km dataset "noaacwNPPN20S3ASCIDINEOF2kmDaily" was retired by NOAA
+# CoastWatch and now returns HTTP 404 — that outage is what silently dropped both water-color maps
+# from the 2026-07-31 run. The surviving DINEOF products are 9 km. Near-real-time leads with a ~2-day
+# lag (what a forward-looking weekly briefing actually wants); the science-quality products run
+# ~11-12 days behind and serve as backstops.
+CHL_DATASETS = [
+    ("noaacwNPPN20VIIRSDINEOFDaily",    "VIIRS SNPP+NOAA-20 · DINEOF gap-filled · near-real-time 9 km"),
+    ("noaacwNPPN20S3ASCIDINEOFDaily",   "VIIRS SNPP+NOAA-20 + Sentinel-3A OLCI · DINEOF gap-filled · science 9 km"),
+    ("noaacwNPPN20VIIRSSCIDINEOFDaily", "VIIRS SNPP+NOAA-20 · DINEOF gap-filled · science 9 km"),
+]
 _UA = {"User-Agent": "Mozilla/5.0 (conditions.py fishing-report)"}
-def _urlopen(url, timeout=30):
-    return urllib.request.urlopen(urllib.request.Request(url, headers=_UA), timeout=timeout)
+
+def _urlopen(url, timeout=30, attempts=4):
+    """Fetch with backoff on transient failures.
+
+    NOAA's ERDDAP servers return sporadic 503s under load — observed ~25% of calls on
+    coastwatch.pfeg.noaa.gov (which is the only host serving jplMURSST41; the newer
+    coastwatch.noaa.gov 404s for it, so a mirror is not an option). A single 503 used to
+    silently drop one map from the run, so retry rather than give up on the first miss.
+    4xx other than 429 are permanent — fail fast on those instead of burning the backoff.
+    """
+    delay = 2.0
+    for i in range(attempts):
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, headers=_UA), timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code < 500 and e.code != 429:
+                raise
+            if i == attempts - 1:
+                raise
+        except Exception:
+            if i == attempts - 1:
+                raise
+        time.sleep(delay)
+        delay *= 2
 
 TODAY = datetime.date.today()
 WEEK_END = TODAY + datetime.timedelta(days=6)
@@ -142,12 +175,14 @@ def fetch_mur(lat0, lat1, lon0, lon1, stride):
             g[li[float(r[1])], lo[float(r[2])]] = float(v) * 9 / 5 + 32
     return lats, lons, g, date
 
-def fetch_chl(lat0, lat1, lon0, lon1, stride):
+def _fetch_chl_one(ds, lat0, lat1, lon0, lon1, stride):
     # chlor_a dims = [time][altitude][latitude][longitude]; lat axis is north->south.
-    u = (f"https://coastwatch.noaa.gov/erddap/griddap/{CHL_DS}.csv?chlor_a"
+    u = (f"https://coastwatch.noaa.gov/erddap/griddap/{ds}.csv?chlor_a"
          f"%5B(last)%5D%5B0%5D%5B({lat0}):{stride}:({lat1})%5D%5B({lon0}):{stride}:({lon1})%5D")
     raw = _urlopen(u, 42).read().decode()
     rows = list(csv.reader(io.StringIO(raw)))[2:]
+    if not rows:
+        raise ValueError("empty grid")
     import numpy as np
     lats = sorted(set(float(r[2]) for r in rows)); lons = sorted(set(float(r[3]) for r in rows))
     li = {v: i for i, v in enumerate(lats)}; lo = {v: i for i, v in enumerate(lons)}
@@ -157,7 +192,25 @@ def fetch_chl(lat0, lat1, lon0, lon1, stride):
         v = r[4]
         if v not in ("", "NaN"):
             g[li[float(r[2])], lo[float(r[3])]] = float(v)
+    if not np.isfinite(g).any():
+        raise ValueError("grid is all-NaN")
     return lats, lons, g, date
+
+
+def fetch_chl(lat0, lat1, lon0, lon1, stride):
+    """Try each DINEOF dataset in CHL_DATASETS order; return the first that answers.
+
+    Returns (lats, lons, grid, date, source_label). Raises the last error only if every
+    dataset fails, so a single retired dataset ID can no longer silently drop the map.
+    """
+    errs = []
+    for ds, label in CHL_DATASETS:
+        try:
+            lats, lons, g, date = _fetch_chl_one(ds, lat0, lat1, lon0, lon1, stride)
+            return lats, lons, g, date, label
+        except Exception as e:
+            errs.append(f"{ds}: {type(e).__name__} {e}")
+    raise RuntimeError("all chlorophyll datasets failed — " + " | ".join(errs))
 
 def draw_map(lats, lons, g, date, markers, title, path, vmin, vmax):
     import numpy as np, matplotlib
@@ -185,7 +238,7 @@ def draw_map(lats, lons, g, date, markers, title, path, vmin, vmax):
             transform=ax.transAxes, ha="center", fontsize=7.5, color="#5b6470")
     fig.tight_layout(); fig.savefig(path, bbox_inches="tight", facecolor="white"); plt.close()
 
-def draw_chl(lats, lons, g, date, markers, title, path):
+def draw_chl(lats, lons, g, date, markers, title, path, source):
     import numpy as np, matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -211,7 +264,12 @@ def draw_chl(lats, lons, g, date, markers, title, path):
     cb = fig.colorbar(im, ax=ax, fraction=0.038, pad=0.02, ticks=[0.03, 0.1, 0.3, 1, 3])
     cb.ax.set_yticklabels(["0.03", "0.1", "0.3", "1", "3"], fontsize=7)
     cb.set_label("Chlorophyll-a (mg/m³)  ·  blue = clean  →  green = productive", fontsize=8, color="#2B4C7E")
-    ax.text(0.5, -0.07, f"VIIRS SNPP+NOAA-20 + Sentinel-3A OLCI · DINEOF gap-filled · {date}",
+    try:
+        lag = (TODAY - datetime.date.fromisoformat(date)).days
+        stamp = f"{date} ({lag}-day lag)"
+    except Exception:
+        stamp = date
+    ax.text(0.5, -0.07, f"{source} · {stamp}",
             transform=ax.transAxes, ha="center", fontsize=7.5, color="#5b6470")
     fig.tight_layout(); fig.savefig(path, bbox_inches="tight", facecolor="white"); plt.close()
 
@@ -239,18 +297,20 @@ def build_maps():
         out["baja_sst"] = (mac(p), d)
     except Exception as e:
         out["baja_sst"] = (None, str(e))
-    # --- Chlorophyll / water-color maps (VIIRS+OLCI DINEOF, gap-filled) ---
+    # --- Chlorophyll / water-color maps (DINEOF gap-filled; see CHL_DATASETS) ---
+    # stride 1: the surviving DINEOF products are 9 km (0.0833°), so decimating further
+    # would leave too few cells to read a colour edge off.
     try:
-        la, lo, g, d = fetch_chl(34.6, 31.0, -121.0, -116.6, 2)
+        la, lo, g, d, src = fetch_chl(34.6, 31.0, -121.0, -116.6, 1)
         p = os.path.join(MAPS_DIR, f"socal_water_color_{stamp}.png")
-        draw_chl(la, lo, g, d, _SOCAL_MARKERS, "Southern California — Water Color (Chlorophyll)", p)
+        draw_chl(la, lo, g, d, _SOCAL_MARKERS, "Southern California — Water Color (Chlorophyll)", p, src)
         out["socal_chl"] = (mac(p), d)
     except Exception as e:
         out["socal_chl"] = (None, str(e))
     try:
-        la, lo, g, d = fetch_chl(32.2, 23.5, -119.6, -111.6, 4)
+        la, lo, g, d, src = fetch_chl(32.2, 23.5, -119.6, -111.6, 1)
         p = os.path.join(MAPS_DIR, f"baja_water_color_{stamp}.png")
-        draw_chl(la, lo, g, d, _BAJA_MARKERS, "Northern + Central Baja — Water Color (Chlorophyll)", p)
+        draw_chl(la, lo, g, d, _BAJA_MARKERS, "Northern + Central Baja — Water Color (Chlorophyll)", p, src)
         out["baja_chl"] = (mac(p), d)
     except Exception as e:
         out["baja_chl"] = (None, str(e))
@@ -348,8 +408,8 @@ def build_pdf(week_range, moon_plain, rows, maps):
                                    ("BOTTOMPADDING", (0, 1), (-1, 1), 10)]))
             story.append(t)
     story.append(Paragraph("Numbers: Open-Meteo (wind/swell/SST). Temp-break maps: NOAA MUR 1&nbsp;km SST. "
-                           "Water-color maps: VIIRS+OLCI DINEOF gap-filled chlorophyll. Moon: ephem. "
-                           "Baja offshore values are modeled.", foot))
+                           "Water-color maps: DINEOF gap-filled chlorophyll (dataset and lag printed "
+                           "under each map). Moon: ephem. Baja offshore values are modeled.", foot))
     try:
         doc.build(story)
     except Exception as e:
