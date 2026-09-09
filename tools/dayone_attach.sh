@@ -18,6 +18,9 @@
 #                                 anything missing prints MISSING:<file> to stderr and is skipped, so
 #                                 a stale render is never embedded in a fresh report.
 #   count <ENTRY_UUID>            Print the number of embedded photos (ZHASDATA=1) on the entry.
+#                                 Prints "?" (not 0) if the DB can't be read — the read is
+#                                 read-only, busy-timeout'd and hard-capped at
+#                                 DAYONE_DB_TIMEOUT_SECS (default 8), so it can never hang.
 #   paste <ENTRY_UUID> <IMG>      Open entry, move cursor to end, load IMG to clipboard, paste
 #                                 via System Events, wait for embed. Prints "PASTED=<new_count>".
 #                                 Use for the FIRST map — opens/focuses the entry.
@@ -64,10 +67,76 @@ map_for_stamp() {
   return 0
 }
 
+# Hard wall-clock cap for any DB read. macOS has no coreutils `timeout`, so roll one.
+# Returns 124 on expiry, mirroring GNU timeout.
+DB_TIMEOUT_SECS="${DAYONE_DB_TIMEOUT_SECS:-8}"
+
+run_with_timeout() {
+  local secs="$1"; shift
+  "$@" &
+  local pid=$! waited=0 limit=$(( secs * 10 ))
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$limit" ]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      sleep 0.5
+      kill -KILL "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 0.1
+    waited=$(( waited + 1 ))
+  done
+  wait "$pid"
+}
+
 embedded_count() {
+  # Counts embedded photos on an entry while Day One is running. This MUST NOT be able
+  # to block: on 2026-08-07 the old one-liner hung indefinitely here and stalled the
+  # whole PART 5 step — `paste` never returned even though its Cmd+V had already fired,
+  # and the run had to be killed by hand.
+  #
+  # Why a snapshot copy rather than reading the live file:
+  #   * The DB is WAL (a -wal and -shm sit next to it). Readers are not supposed to block
+  #     writers in WAL — but opening a WAL database read-only still needs write access to
+  #     the -shm, and in this sandbox that neither succeeds nor fails cleanly, it just
+  #     stalls. `sqlite3 -readonly -cmd ".timeout 3000"` still timed out at 8s.
+  #   * `file:$DB?immutable=1` does dodge the lock, but it ignores the -wal entirely, so a
+  #     just-committed attachment is invisible and the caller reads a stale count — the
+  #     worst possible failure mode when the whole point is verifying a paste landed.
+  # Copying db + -wal + -shm to a scratch dir and querying the copy is lock-free, sees
+  # WAL-resident commits, and cannot touch Day One's own files. ~45 MB, well under a second.
+  #
+  # On failure prints "?" (unknown), never a number. The old code did `|| echo 0`, which
+  # reported an unreadable DB as "zero photos embedded" — indistinguishable from a real
+  # empty entry, so a caller would retry a paste that had actually succeeded.
   local uuid="$1"
-  sqlite3 "$DB" "SELECT COUNT(*) FROM ZENTRY e JOIN ZATTACHMENT a ON a.ZENTRY=e.Z_PK \
-    WHERE e.ZUUID='$uuid' AND a.ZHASDATA=1;" 2>/dev/null || echo 0
+  case "$uuid" in
+    ''|*[!0-9A-Fa-f-]*) echo "ERROR: bad entry uuid: $uuid" >&2; echo "?"; return 0 ;;
+  esac
+
+  local tmp out rc=0
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/dayone_count.XXXXXX")" || { echo "?"; return 0; }
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+
+  cp "$DB" "$tmp/db.sqlite" 2>/dev/null || { echo "WARN: cannot copy DB" >&2; echo "?"; return 0; }
+  [ -f "$DB-wal" ] && cp "$DB-wal" "$tmp/db.sqlite-wal" 2>/dev/null || true
+  [ -f "$DB-shm" ] && cp "$DB-shm" "$tmp/db.sqlite-shm" 2>/dev/null || true
+
+  out="$(run_with_timeout "$DB_TIMEOUT_SECS" \
+      sqlite3 -cmd ".timeout 3000" "$tmp/db.sqlite" \
+      "SELECT COUNT(*) FROM ZENTRY e JOIN ZATTACHMENT a ON a.ZENTRY=e.Z_PK \
+       WHERE e.ZUUID='$uuid' AND a.ZHASDATA=1;" 2>/dev/null)" || rc=$?
+
+  if [ "$rc" -eq 124 ]; then
+    echo "WARN: DB read timed out after ${DB_TIMEOUT_SECS}s" >&2
+    echo "?"; return 0
+  fi
+  if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
+    echo "WARN: DB read failed (rc=$rc)" >&2
+    echo "?"; return 0
+  fi
+  echo "$out"
 }
 
 cmd="${1:-}"
