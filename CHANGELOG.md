@@ -5,6 +5,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-09-09] — YouTube transcripts: library first, Chrome fallback
+
+### Added
+- **`tools/yt_transcript.py`** — a Chrome-free YouTube step. Per channel it reads the public Atom
+  feed (exact ISO publish dates), drops Shorts (HEAD on `youtube.com/shorts/<id>`: 200 = Short,
+  303 = normal video), walks the in-window uploads newest-first to the first with a caption track
+  (manual en → auto en → any `en-*` → translated), fetches it with `youtube_transcript_api` 1.2.4,
+  and writes `youtube_transcripts/<stamp>/<key>.txt` + `manifest.json`. One status line per
+  channel: `OK` / `NO_NEW_VIDEO` / `NO_CAPTIONS` / `FETCH_FAILED` / `FEED_FAILED`. Stops fetching
+  at the first `IpBlocked` / `RequestBlocked` (later channels print `not attempted`), deletes a
+  same-day stale `.txt` when a channel's status is no longer OK, prunes folders after ~8 weeks,
+  and `--only <key>` merges into the day's manifest instead of clobbering it.
+- `youtube_transcripts/` added to `.gitignore`.
+
+### Changed
+- **SKILL.md Part 1** (repo copy and the live `~/.claude/scheduled-tasks/` copy, byte-identical):
+  the script is the primary path; the pre-existing Chrome UI procedure is kept verbatim as the
+  fallback and invoked only for `FETCH_FAILED` / `FEED_FAILED` videos. Documented the error
+  semantics: `IpBlocked` is rate-limiting, not a bug — never re-run into it; the Chrome fallback was
+  verified to work from the same IP while the library was blocked.
+- README, AGENTS.md (file map, run steps, extend, new verification gate 6), CLAUDE.md, llms.txt,
+  SETUP.md, SCHEDULE.md, BUILD-PLAN.md §7 updated to match.
+- Repo `SKILL.md` gained the 2026-09-03 heartbeat/timestamp hardening block that only the live copy
+  had; the two copies now differ solely by the documented placeholder scrub (`CONFIG.local.md`).
+
+### Why
+- On 2026-09-04 Chasing Pelagics' video (17 caption tracks) opened a transcript panel that never
+  populated through four retries incl. reload and close/reopen, and the in-page caption-URL fallback
+  returned an empty body (YouTube now requires a Proof-of-Origin token). The library fetched that
+  same video's full 16,936-char transcript in one call.
+
+### Known limitations
+- Block duration after `IpBlocked` is unknown; two blocked weeks running is the trigger to add
+  `yt-dlp` with a PO-token provider. The 7-day window is hour-granular; `--days 8` widens it.
+
+## [2026-08-07] — Day One photo count can no longer hang PART 5
+
+### Fixed
+- `tools/dayone_attach.sh count` / `paste` / `clip_paste` could block forever reading the Day One
+  SQLite while the app held its WAL; on 2026-08-07 `paste` never returned even though its Cmd+V had
+  fired and the run had to be killed by hand. `embedded_count` now copies `DayOne.sqlite` + `-wal` +
+  `-shm` to a scratch dir and queries the copy under a hand-rolled 8 s wall-clock cap
+  (`DAYONE_DB_TIMEOUT_SECS`), sees WAL-resident commits, and prints `?` (unknown) instead of `0` when
+  the read fails so a caller never mistakes an unreadable DB for an empty entry.
+
 ## [2026-07-31b] — Correct the PART 5 permissions claim
 
 ### Fixed

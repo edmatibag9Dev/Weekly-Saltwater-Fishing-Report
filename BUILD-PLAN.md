@@ -89,3 +89,35 @@ The Ridge `25.3/-114.6` · Alijos Rocks `24.95/-115.73`. Tune in `conditions.py 
   the manual "+" step). Track via the verification gates in AGENTS.md.
 - Possible add: a chlorophyll/water-color legend tuned per-region; AIS fleet overlay is the one thing
   the free pipeline can't replicate (Catalysst-only).
+
+## 7. The YouTube transcript finding (2026-09-09)
+
+The Chrome-driven transcript scrape was the least reliable step in the pipeline and each fix
+(2026-07-09 dual-panel reader, 2026-07-31 content-based panel selection) narrowed the failure
+without removing it. On 2026-09-04 a video with 17 published caption tracks opened a transcript
+panel that never populated through four retries including reload and close/reopen, and the
+in-page caption-URL fallback returned an empty body because YouTube now requires a Proof-of-Origin
+token on that endpoint. The library `youtube_transcript_api` (1.2.4) fetched the same video's full
+16,936-character transcript in one call, so it is now the primary path and the Chrome procedure is
+the per-video fallback.
+
+Findings from building `tools/yt_transcript.py`:
+
+- **Channel Atom feeds** (`youtube.com/feeds/videos.xml?channel_id=…`) give exact ISO publish
+  timestamps and need no browser, but they **list Shorts without flagging them**. Three of
+  Fisherman's Landing's six newest uploads were 20-second clips with no captions; the first build
+  selected one as "the weekly report". A HEAD on `youtube.com/shorts/<id>` answers 200 for a Short
+  and 303 for a normal video (3/3 consistent on four test videos); oEmbed dimensions are not usable
+  because every video reports 200×113.
+- **YouTube rate-limits the library by IP** (`IpBlocked`). Triggered once during testing at
+  roughly 20 fetches in 10 minutes; a weekly run makes 5–8. The script stops fetching at the first
+  block instead of retrying, and the Chrome fallback was verified to still pull a transcript from
+  the same IP while the library was blocked — the browser session is authenticated, the library is
+  not. Block duration is unknown.
+- **Interpreter pinning matters.** The library is installed for `/usr/bin/python3` (3.9) and the
+  python.org 3.14, not Homebrew's. Under launchd `PATH` resolves `python3` to `/usr/bin/python3`;
+  in an interactive shell it resolves to 3.14. The script is invoked with the absolute path.
+- **A same-day stale file can lie.** A run that succeeds and a later run that is blocked leave a
+  `.txt` beside a `FETCH_FAILED` manifest. Any non-OK status now deletes that channel's file, so the
+  status line, not the file, is the record.
+

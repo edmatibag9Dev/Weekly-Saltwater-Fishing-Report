@@ -1,8 +1,8 @@
 # Weekly Saltwater Fishing Report
 
 > Local-first weekly fishing-intelligence report for Southern California & Baja. Pipeline:
-> scrape YouTube transcripts + San Diego landing fish counts + long-range boat reports (via the
-> Chrome extension) AND render a forward-looking Conditions briefing (wind / swell / SST / moon +
+> pull YouTube transcripts headlessly (tools/yt_transcript.py; Chrome only as a per-video fallback)
+> + scrape San Diego landing fish counts and long-range boat reports via the Chrome extension AND render a forward-looking Conditions briefing (wind / swell / SST / moon +
 > temperature-break & water-color maps) from free public APIs -> one Day One journal entry, posted
 > every Friday 9:02 AM Pacific. The Conditions section is rendered headlessly (no Chrome) by
 > conditions.py; its numbers are pasted into the report VERBATIM and its maps ship as a one-page PDF.
@@ -16,6 +16,9 @@
 - [conditions.py](conditions.py): self-contained generator — Open-Meteo numbers, NOAA MUR temp-break maps, VIIRS+OLCI gap-filled chlorophyll water-color maps, ephem moon, reportlab PDF. No Chrome, no login.
 - [SPEC-conditions.md](SPEC-conditions.md): the Conditions data contract — regions, coordinates, data sources, the stdout format, and the PDF briefing.
 - [requirements.txt](requirements.txt): Python dependencies for conditions.py.
+
+## YouTube step
+- [tools/yt_transcript.py](tools/yt_transcript.py): channel Atom feeds -> drop Shorts -> newest captioned upload in the window -> youtube_transcript_api -> youtube_transcripts/<stamp>/<key>.txt + manifest.json. One status line per channel; only FETCH_FAILED / FEED_FAILED go to the Chrome fallback in SKILL.md Part 1. Run with /usr/bin/python3.
 
 ## Task + scheduling
 - [SKILL.md](SKILL.md): the full scheduled-task prompt — the report's operating instructions (sources, format, alerts).

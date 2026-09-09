@@ -7,13 +7,14 @@ asked to **use, reference, extend, or rebuild** this project. Read it before act
 
 A local-first **Weekly Saltwater Fishing Report** for Southern California & Baja waters. Every
 Friday at 9:02 AM Pacific a Cowork scheduled task compiles fishing intelligence into a single
-**Day One** journal entry: it scrapes YouTube transcripts, San Diego landing fish counts, and
-long-range boat reports (via the Chrome extension), and renders a forward-looking **Conditions**
-briefing (wind / swell / SST / moon + temperature-break & water-color maps) from free public APIs.
+**Day One** journal entry: it pulls YouTube transcripts headlessly (`tools/yt_transcript.py`,
+Chrome only as a per-video fallback), scrapes San Diego landing fish counts and long-range boat
+reports via the Chrome extension, and renders a forward-looking **Conditions** briefing (wind /
+swell / SST / moon + temperature-break & water-color maps) from free public APIs.
 
-Design in one line: **6 YouTube channels + 4 SD landings + long-range reports (Chrome) +
-a headless Conditions engine (no Chrome) → one Day One entry, with the Conditions maps delivered
-as a one-page PDF.**
+Design in one line: **6 YouTube channels (headless, Chrome fallback) + 4 SD landings + long-range
+reports (Chrome) + a headless Conditions engine (no Chrome) → one Day One entry, with the
+Conditions maps delivered as a one-page PDF.**
 
 The Conditions section sits at the **top** of the report as a briefing header that frames the
 retrospective catch intel below it.
@@ -38,9 +39,11 @@ retrospective catch intel below it.
 | `SETUP.md` | yes | Connector setup / troubleshooting. |
 | `samples/conditions_sample.txt` | yes | Committed sample of `conditions.py` stdout (a real Conditions briefing text) so the repo previews without the gitignored live output. |
 | `samples/conditions_sample.pdf` | yes | Committed sample one-page Conditions briefing PDF (temp-break + water-color maps) — reference for what the live `conditions_briefings/` PDFs look like. |
+| `tools/yt_transcript.py` | yes | Headless YouTube step: channel Atom feeds → drop Shorts (`/shorts/<id>` HEAD 200 vs 303) → newest captioned upload in window → `youtube_transcript_api` → `youtube_transcripts/<stamp>/<key>.txt` + `manifest.json`, one status line per channel. Run with `/usr/bin/python3`. |
 | `tools/dayone_attach.sh` | yes | Shell helper that pastes the Conditions map PNGs into a Day One entry via clipboard/System Events, working around the broken Day One connector attachment path. |
 | `conditions_maps/` | **no (gitignored)** | Rendered map PNGs (timestamped; auto-pruned >8 wks). |
 | `conditions_briefings/` | **no (gitignored)** | Dated PDF briefings generated each run. |
+| `youtube_transcripts/` | **no (gitignored)** | Per-run transcript pulls + manifest (third-party content; auto-pruned >8 wks). |
 | `past-reports/` | **no (gitignored)** | Optional local archive of exported entries. |
 
 ## The Conditions data contract (`conditions.py` stdout)
@@ -82,8 +85,10 @@ Rules an agent must preserve:
 
 ## How the run works
 
-1. **Scrape (Chrome).** YouTube transcripts (6 channels), 4 SD landing fish-count archives, and
-   LongRangeSportfishing.net — see SKILL.md Parts 1–3. Requires Chrome open + signed in.
+1. **YouTube (no Chrome).** `/usr/bin/python3 tools/yt_transcript.py --days 7` — one status line
+   per channel; only `FETCH_FAILED` / `FEED_FAILED` channels fall back to the Chrome UI method kept in
+   SKILL.md Part 1. Then **scrape (Chrome)** the 4 SD landing fish-count archives and
+   LongRangeSportfishing.net — SKILL.md Parts 2–3. Chrome open + signed in is still required.
 2. **Conditions (no Chrome).** `pip install -r requirements.txt --break-system-packages -q`, then
    `python3 conditions.py`. It pulls wind/swell/SST from Open-Meteo, renders temp-break maps from
    NOAA MUR and water-color maps from VIIRS+OLCI chlorophyll, computes the moon with `ephem`, and
@@ -109,8 +114,10 @@ through Day One's own "+" button renders fine. Therefore:
 - **Add/retune a region:** edit the `REGIONS` list in `conditions.py` (name, lat, lon, tier). Add a
   matching marker to `_SOCAL_MARKERS` / `_BAJA_MARKERS` and, if it shifts the map frame, the bbox in
   `build_maps()`. Update SPEC-conditions.md.
-- **Add a YouTube channel / SD landing:** edit SKILL.md Parts 1–2 (and CLAUDE.md's monitored lists),
-  then re-sync the live task (SCHEDULE.md).
+- **Add a YouTube channel:** add a `(key, name, handle, channel_id)` row to `CHANNELS` in
+  `tools/yt_transcript.py` (leave `channel_id` blank and it is resolved from the handle at run time),
+  then edit SKILL.md Part 1 and CLAUDE.md's monitored list, and re-sync the live task (SCHEDULE.md).
+- **Add an SD landing:** edit SKILL.md Part 2 (and CLAUDE.md), then re-sync the live task.
 - **Swap a data source:** numbers = Open-Meteo; temp-break = NOAA MUR (`jplMURSST41`, served only by
   `coastwatch.pfeg.noaa.gov`); water-color = the `CHL_DATASETS` fallback chain in `conditions.py`
   (NRT 9 km first, science 9 km as backstops). All via public HTTP — no keys. Keep the
@@ -143,6 +150,9 @@ through Day One's own "+" button renders fine. Therefore:
    ERDDAP dataset ID was retired (the 2 km chlorophyll product was, in July 2026) before assuming a
    transient outage.
 5. The Day One save uses `create_journal_entry` (text), NOT `create_entry_with_attachments`.
+6. `/usr/bin/python3 tools/yt_transcript.py --only dancing_on_water` exits 0 and prints a status line.
+   (That channel has had no upload in months, so the check makes zero transcript requests and cannot
+   contribute to an IP block; a full 6-channel run is the real test but costs 5–8 fetches.)
 
 ---
 

@@ -14,7 +14,8 @@ next launch.
 
 ## Runtime prerequisites (Fridays)
 
-- **Google Chrome open + signed in** with the Claude-in-Chrome extension (Parts 1–3 scraping).
+- **Google Chrome open + signed in** with the Claude-in-Chrome extension (Parts 2–3 scraping, plus
+  the Part 1 YouTube fallback; the primary YouTube path `tools/yt_transcript.py` is headless).
 - **Day One app running** (entry save).
 - **Slack / Gmail / Apple Notes** connectors available (success post + error alerts).
 - Sandbox network reaches `open-meteo.com` and `coastwatch.pfeg.noaa.gov` / `coastwatch.noaa.gov`

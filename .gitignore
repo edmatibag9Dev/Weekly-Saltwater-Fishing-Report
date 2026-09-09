@@ -16,3 +16,6 @@ __pycache__/
 .DS_Store
 
 # Note: samples/ IS committed (sample PDF + stdout for preview, since the real outputs above are ignored)
+
+# Weekly YouTube transcript pulls (third-party content, regenerated each run; pruned after ~8 weeks)
+youtube_transcripts/

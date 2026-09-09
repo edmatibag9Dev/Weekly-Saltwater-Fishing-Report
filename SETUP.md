@@ -5,7 +5,7 @@
 All of these must be connected in Cowork for the task to run successfully.
 
 ### 1. Claude in Chrome (Browser Extension)
-**Purpose:** Scrapes YouTube video pages (transcripts), SD Fish Reports landing pages, and LongRangeSportfishing.net  
+**Purpose:** Scrapes SD Fish Reports landing pages and LongRangeSportfishing.net; YouTube transcripts only as the per-video fallback (the primary path, `tools/yt_transcript.py`, needs no browser)  
 **How to verify:** Open Chrome → look for the Claude extension icon in the toolbar. It should show as connected.  
 **Critical:** Chrome must be **open and not minimized** at 9:02 AM on Fridays. The browser doesn't need to be on any specific page.  
 **Install:** Chrome Web Store → search "Claude for Chrome" → install → sign in with your Anthropic account.
@@ -70,10 +70,12 @@ Or navigate directly to `~/Claude/Scheduled/weekly-saltwater-fishing-report/SKIL
 
 ## To Add a New YouTube Channel
 
-1. Open `SKILL.md` in this folder
-2. Find the `## PART 1 — YouTube Channels to Check` section
-3. Add the new channel URL to the numbered list
-4. Save, then update the Scheduled task (steps above)
+1. Add a row to `CHANNELS` in `tools/yt_transcript.py` — `(key, display name, @handle, channel_id)`;
+   leave `channel_id` as `""` and the script resolves it from the handle. Test with
+   `/usr/bin/python3 tools/yt_transcript.py --only <key>`.
+2. Open `SKILL.md` in this folder, find `## PART 1 — YouTube Channels to Check`, add the channel URL
+   to the numbered list (and to CLAUDE.md's monitored list)
+3. Save, then update the Scheduled task (steps above)
 
 ## To Add a New SD Landing
 
@@ -97,9 +99,12 @@ Or navigate directly to `~/Claude/Scheduled/weekly-saltwater-fishing-report/SKIL
 - Manually re-run: open Cowork → type `run weekly saltwater fishing report`
 
 **Transcript extraction failing for some channels:**
-- This is expected for newer YouTube videos that use the modern transcript format
-- Those channels are noted as "transcript unavailable" in the report
-- No action needed — the task will still complete using available sources
+- Read the status line from `tools/yt_transcript.py`: `NO_CAPTIONS` is genuine (YouTube publishes no
+  caption track) and needs no action; `FETCH_FAILED … IpBlocked` means YouTube is rate-limiting the
+  machine — the run uses the Chrome fallback for those videos and it is not an alert
+- If `IpBlocked` shows up two weeks running, the next step is `yt-dlp` with a PO-token provider
+- A channel reported `NO_NEW_VIDEO` while a new video is visible on YouTube was almost certainly a
+  Short (the feed lists them; the script skips them and names them in `[skipped …]`)
 
 **Task ran but no email alert received:**
 - Check Gmail spam folder

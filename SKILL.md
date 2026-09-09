@@ -22,12 +22,86 @@ All data is combined into a single structured Day One journal entry.
 5. Chasing Pelagics — https://www.youtube.com/@ChasingPelagics
 6. Fisherman's Landing — https://www.youtube.com/@fishermanslanding
 
-### Steps for Each YouTube Channel
+### Steps — primary path (no Chrome): `tools/yt_transcript.py`
+
+Run ONE command from the project folder. It handles all six channels and needs no browser:
+
+```bash
+/usr/bin/python3 tools/yt_transcript.py --days 7
+```
+
+Use `/usr/bin/python3` literally. The library (`youtube_transcript_api`, v1.2.4 verified 2026-09-08)
+is installed for the system Python 3.9 and the python.org 3.14, **not** the Homebrew python. Under
+launchd `PATH` is `/bin:/usr/bin:/usr/ucb:/usr/local/bin`, so a bare `python3` also lands on 3.9 —
+but say it explicitly so an interactive shell (where `python3` is 3.14) and a scheduled run behave
+the same.
+
+**Why this replaced the Chrome scrape (2026-09-08):** the transcript panel has a per-video failure
+mode where it opens and never populates — 4 retries including reload and close/reopen did not cure
+it on Chasing Pelagics 2026-09-04 — and the in-page caption-URL fallback now returns an empty body
+(YouTube requires a Proof-of-Origin token). The library fetched that same video's full 16,936-char
+transcript in one call. Chrome is now the fallback, not the primary.
+
+**What the script does per channel**
+1. Reads the channel's public Atom feed (`youtube.com/feeds/videos.xml?channel_id=…`) — exact ISO
+   publish timestamps, no "3 days ago" parsing. Channel IDs are pinned in the script and
+   re-resolved from the @handle if blank.
+2. **Drops Shorts.** The feed does not flag them and Fisherman's Landing posts several a week
+   (3 of its newest 6 uploads on 2026-09-08 were 20-second Searcher trip clips with no captions).
+   Detection: a HEAD on `youtube.com/shorts/<id>` answers **200 for a Short, 303 for a normal
+   video.** A title tagged `#shorts` is also dropped. If the probe errors twice the video is treated
+   as normal and a `⚠` warning is appended to that channel's status line — a dropped real report is
+   worse than a probed Short. (oEmbed width/height is NOT a usable signal: every video reports
+   200×113.)
+3. Walks the remaining in-window uploads newest-first and takes the first with a caption track,
+   preferring manual English → auto English → any `en-*` → translated. A captionless upload does
+   **not** end the search; the next candidate is tried. Every skip is recorded in the manifest.
+4. Writes `youtube_transcripts/<YYYYMMDD>/<key>.txt` (title, URL, publish date, track, then the
+   text) and `youtube_transcripts/<YYYYMMDD>/manifest.json`. Folders older than ~8 weeks are pruned.
+
+**Act on the one-line status it prints per channel:**
+
+| Status | Meaning | What to do |
+|---|---|---|
+| `OK` | transcript written, char count shown | `cat` the `.txt` and analyze |
+| `NO_NEW_VIDEO` | nothing (non-Short) inside the window; newest upload date shown. If the window held only Shorts the line says so ("N in-window upload(s) were all Shorts") | Sources: "No new video this week" (mention skipped Shorts if any) |
+| `NO_CAPTIONS` | video exists, YouTube publishes no caption track for it (all in-window candidates were probed) | Sources: "transcript unavailable (no captions published)" — genuine, do **not** retry |
+| `FETCH_FAILED` | captions exist but the fetch failed; exception class shown; URL printed | **Chrome fallback for that video only** (below) |
+| `FEED_FAILED` | the channel feed itself could not be read | **Chrome fallback for listing + transcript** (below) |
+
+Read the transcripts with `cat` / `sed -n` — never through a JavaScript return value (it truncates
+at ~1,000 chars).
+
+**Reading the errors honestly**
+- `RequestBlocked` / `IpBlocked` in a `FETCH_FAILED` line means YouTube is rate-limiting this IP.
+  It is not a script bug. The script stops fetching at the first block — later channels print
+  `FETCH_FAILED … not attempted — YouTube IpBlocked this IP earlier in the run` — because retrying
+  deepens the block. **Do not re-run the script** (a second run is more of the same requests); use
+  the Chrome fallback for every `FETCH_FAILED` video — the browser session is logged in and was
+  verified to still pull transcripts from the same IP while the library was blocked (2026-09-08).
+  File a Lane-2 row (`category: youtube-ip-block`) whenever this happens; two weeks running is the
+  signal to add `yt-dlp` with a PO-token provider. Cause on 2026-09-08 was ~20 fetches in 10 min of
+  testing — a normal weekly run makes 5–8.
+- The script also deletes a same-day `<key>.txt` left by an earlier run when the channel's status is
+  no longer `OK`, so a stale file can never masquerade as this run's transcript. Trust the status
+  line and the manifest, not the presence of a file.
+- A traceback / `ModuleNotFoundError` means the environment changed. Try
+  `/usr/bin/python3 -m pip install --user youtube-transcript-api` once, re-run; if it still fails,
+  fall back to Chrome for **all** channels and file a Lane-2 row.
+- A transcript that is suspiciously short (< ~300 chars) for a long video is treated as a teaser and
+  the next candidate is tried; if the newest real upload is genuinely a 1-minute clip, the manifest
+  says so and the short text is what you get — report it as such, do not pad it.
+
+### Fallback path — Chrome UI (ONLY for `FETCH_FAILED` / `FEED_FAILED` channels)
+
+The steps below are the pre-2026-09-08 primary method, kept verbatim. Use them **per failing video**,
+not for the whole channel list. Steps 1–3 are only needed on `FEED_FAILED`; on `FETCH_FAILED` open
+the URL the script printed and start at step 4.
 
 1. Navigate to the channel's Videos page (append /videos to the channel URL).
 2. Identify the most recent video published within the last 7 days. Check the metadata timestamps (e.g. "1 day ago", "3 days ago"). If no new video was posted this week, skip that channel and note it in the report.
 3. Open the video page.
-4. Extract the full transcript. **Do NOT use a bare JavaScript `.click()`, and do NOT assume the classic transcript panel.** YouTube now serves two transcript-panel variants, bucketed **per video** (so within one run some videos use one and some use the other), and a synthetic `.click()` frequently fails to fire YouTube's transcript fetch — this is the cause of the intermittent "transcript unavailable" false negatives. Follow this exact sequence:
+4. Extract the full transcript (fallback only). **Do NOT use a bare JavaScript `.click()`, and do NOT assume the classic transcript panel.** YouTube now serves two transcript-panel variants, bucketed **per video** (so within one run some videos use one and some use the other), and a synthetic `.click()` frequently fails to fire YouTube's transcript fetch — this is the cause of the intermittent "transcript unavailable" false negatives. Follow this exact sequence:
 
    **a. Confirm captions actually exist first (genuine-vs-failed gate).** Read the player caption tracks:
    ```js
@@ -94,7 +168,7 @@ All data is combined into a single structured Day One journal entry.
    as the readiness probe in step d (compare `.length` across polls), then call `get_page_text` once
    for the content. Note `get_page_text` output does include the modern panel's word-form timestamps
    ("25 seconds") interleaved with the text — that is cosmetic and does not impede analysis.
-5. Analyze the transcript for the intel categories below.
+5. Analyze the transcript for the intel categories below (same as for script-produced transcripts).
 
 ### Intel to Extract from YouTube Transcripts
 
@@ -428,9 +502,13 @@ to a GUI caller. They are unusable on a scheduled run for the reason above — p
 
 **Run this immediately AFTER the Day One entry has been saved successfully.** This is the normal "report posted" confirmation — it fires on every successful run, not on errors.
 
-Post a message to Slack using `mcp__0d87112c-54fd-4221-ad16-0fac875e1609__slack_send_message`:
-- **channel_id:** `<SLACK_CHANNEL_ID>`  (workspace: <SLACK_WORKSPACE> — channel #fishing-report-alerts)
-- **message:** A concise success summary, for example:
+Post to **#fishing-report-alerts** via the Claude Alerts webhook (this posts under an app identity, which is what makes Slack actually banner/push — verified 2026-08-04). Pipe the message via stdin:
+
+`printf '%s' '<message>' | python3 $HOME/.claude/lib/slack_alert.py fishing-report-alerts -`
+
+The script always exits 0 and prints `alert-sent fishing-report-alerts` or `alert-failed ...: <reason>` — only `alert-sent` counts as delivered. DO NOT "simplify" back to the Slack MCP connector (`slack_send_message`): the connector posts AS the user themself and Slack never notifies a user of their own messages — every connector post to this channel landed silently until 2026-08-04. The webhook secret lives at `~/.config/claude-alerts/<channel>_webhook` (file, not env var — headless runs don't source ~/.zshrc); never print or log the URL. Message format is Slack mrkdwn (*bold* single-asterisk).
+
+**message:** A concise success summary, for example:
 
 ```
 :fish: *Weekly Saltwater Fishing Report — [Date] posted to Day One.*
@@ -488,8 +566,9 @@ Note: a failure of the Conditions step (PART 4) is NOT an alert condition — wr
 3. Send via Cmd+Enter or click Send button.
 
 **Step 2 — Slack (sent at the same time as Gmail):**
-Post to Slack using `mcp__0d87112c-54fd-4221-ad16-0fac875e1609__slack_send_message`:
-- **channel_id:** `<SLACK_CHANNEL_ID>`  (#fishing-report-alerts, workspace <SLACK_WORKSPACE>)
+Post to **#fishing-report-alerts** via the Claude Alerts webhook (same mechanism as the success notification above — never the `slack_send_message` connector, which posts as the user and never banners):
+
+`printf '%s' '<message>' | python3 $HOME/.claude/lib/slack_alert.py fishing-report-alerts -`
 - **message:**
 
 ```
@@ -523,3 +602,11 @@ ATTENTION-LAYER FOOTER (per ESCALATION-POLICY.md, added 2026-07-28 with Ed's app
 3. ALWAYS end the run -- success or failure -- by appending one heartbeat line to /Users/edmatibag/Documents/Claude/Projects/Mission-Control-Dashboard/runs/heartbeat.jsonl:
    {"task": "weekly-saltwater-fishing-report", "ts": "<ISO-8601 local>", "status": "ok|partial|failed", "note": "<one line>"}
    The ops-watcher reads this to distinguish a run that completed from one that started and died.
+
+   **THE HEARTBEAT IS MANDATORY ON EVERY EXIT PATH, INCLUDING SHORT-CIRCUITS.** Write it even when you skipped the main work, reported from an artifact another process produced, returned early from a guard, finished only partially, or are reporting a failure. **Write it BEFORE you compose your final report to Ed, not after** — if you have enough information to write the report, you have enough to stamp the heartbeat, and stamping first is what makes it survive a run that is interrupted while writing up.
+   Why this was hardened 2026-09-03: watch.py now marks a routine `stalled` when it fired but wrote no heartbeat, because `lastRunAt` proves only that a run was DISPATCHED, never that it COMPLETED. This task was one of three caught by that check on its first run — doing real work every week while appearing silent to every ops check. Concretely for THIS task: a partial result is a REPORTED result. If some landings, boat reports or transcripts could not be fetched, write the heartbeat with status "partial" and name what was missing — do not treat an incomplete gather as a reason to end without stamping. Evidence this is being missed: the last heartbeat is 2026-08-14 and it was itself status "partial".
+
+
+   **TIMESTAMP FORMAT — applies to EVERY `ts` this task writes (digest.jsonl and heartbeat.jsonl). Use a colon in the UTC offset.** Generate it with:
+       /usr/bin/python3 -c "import datetime;print(datetime.datetime.now().astimezone().replace(microsecond=0).isoformat())"
+   which yields `2026-08-30T12:29:48-07:00`. Do NOT use `date '+%Y-%m-%dT%H:%M:%S%z'` — BSD date emits `-0700` with no colon, which Python 3.9's strict `fromisoformat` rejects, and 3.9 is what `/usr/bin/python3` resolves to for launchd-run tooling. Do NOT use `date '+%:z'` either — GNU date supports `%:z`, macOS BSD date does NOT: it passes the literal through, producing a corrupt stamp like `2026-09-02T07:17:49:z` that every reader rejects (observed 2026-09-02, fleet-sentinel heartbeat). Shell `date` is the wrong tool here in all its forms; use the python one-liner above.
