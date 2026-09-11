@@ -7,7 +7,7 @@ You are compiling a weekly saltwater fishing report for SoCal and Baja waters. Y
 1. Visit the YouTube channels below, find the most recent video posted within the last 7 days, extract transcripts, and pull fishing intel.
 2. Visit the San Diego Fish Reports landing pages below, pull the last 7 days of fish count data from the monthly archive calendar.
 3. Visit LongRangeSportfishing.net and extract all fish reports from the last 7 days, organized by boat.
-4. Generate the weekly **Conditions** section (wind / swell / SST / moon + a PDF map briefing) by running `conditions.py` — see PART 4. This step uses no Chrome.
+4. Generate the weekly **Conditions** section (wind / swell / SST / moon + a **Storm Watch** on named East Pacific tropical storms / hurricanes from NOAA's National Hurricane Center + the map images + a PDF briefing) by running `conditions.py` — see PART 4. This step uses no Chrome.
 
 All data is combined into a single structured Day One journal entry.
 
@@ -256,15 +256,17 @@ This site has **no archive or calendar** — it uses simple pagination. The page
 
 ---
 
-## PART 4 — Weekly Conditions (Wind / Swell / SST / Moon + PDF Map Briefing)
+## PART 4 — Weekly Conditions (Wind / Swell / SST / Moon + Storm Watch + Maps + PDF Briefing)
 
 This section is **fully automated and does NOT use Chrome.** It runs a self-contained Python script
-that pulls live data, renders the temperature-break and water-color maps, and compiles them into a
-single dated PDF briefing. (We render headlessly rather than screenshotting Catalysst because browser
+that pulls live data, renders the temperature-break and water-color maps, pulls the NOAA National
+Hurricane Center (NHC) storm feeds and graphics, stages every image where Day One can import it, and
+compiles them into a single dated PDF briefing. (We render headlessly rather than screenshotting Catalysst because browser
 screenshots cannot be saved to disk on the scheduled run.)
 
-⛔ **CRITICAL — never hand-write the Conditions data.** The moon line and every wind / swell / SST
-value MUST come from the stdout of `conditions.py`, pasted verbatim. Do NOT estimate, improvise,
+⛔ **CRITICAL — never hand-write the Conditions data.** The moon line, every wind / swell / SST
+value, and the entire **Storm Watch** block (storm lines, tiers, distances, formation line) MUST come
+from the stdout of `conditions.py`, pasted verbatim. Do NOT estimate, improvise,
 reformat, or "fill in" these numbers yourself, and do NOT add interpretive claims (e.g. "favorable
 for pelagics", "strong tidal action"). If `conditions.py` cannot be found or run, write exactly:
 **"🌊 Conditions — unavailable this run ([one-line reason])"** and move on. A missing or failed script
@@ -282,28 +284,44 @@ and editorial notes was an INCORRECT improvisation — do not repeat it.)
 2. Run the generator from the project folder:
    `python3 "conditions.py"`
    (sandbox path: `/sessions/<session>/mnt/Weekly Saltwater Fishing Report/conditions.py`)
-3. The script prints the ready-to-paste **Conditions** Markdown to stdout, renders the four maps,
-   and compiles them into a single dated **PDF briefing** at
-   `conditions_briefings/conditions_YYYYMMDD.pdf`. At the very end it prints that PDF's macOS path
-   inside a `<!-- BRIEFING ... -->` comment — capture it for the Day One text and the Slack reminder.
+3. The script prints the ready-to-paste **Conditions** Markdown to stdout — region lines, the
+   `📄 Visual briefing` line, one `_caption_` + `[{attachment}]` pair per Conditions map, the
+   **Storm Watch** block, then one caption + `[{attachment}]` pair per storm image — renders the
+   images, copies them into Day One's inbox, and compiles the dated **PDF briefing** at
+   `conditions_briefings/conditions_YYYYMMDD.pdf`. At the very end it prints two comment footers:
+   `<!-- BRIEFING … -->` (the PDF's macOS path — for the Day One text and the Slack reminder) and
+   `<!-- ATTACHMENTS … -->` (the ordered image paths — pass this list **verbatim** as `attachments=`
+   when you save the entry; see the save step and PART 5).
 
-ℹ️ **Maps are embedded as images (PART 5); the PDF is a bundled fallback.** The Day One *CLI's*
-attachment import is broken in this build — it records a moment but never embeds the bytes, so
-anything attached via `create_entry_with_attachments` shows as a blank placeholder. The job therefore
-embeds the four map PNGs by **pasting image data into the open entry** (PART 5), which creates real,
-syncing photo moments. The script still also builds the self-contained PDF (maps + numbers + moon) as
-a portable artifact and a manual-drag fallback for runs where the GUI paste can't execute; the Slack
-post carries its path either way.
+ℹ️ **How the images get into the entry (rewritten 2026-09-11).** Day One is the sandboxed App Store
+build: its attachment import reads a file **lazily, when the entry is first displayed**, and can only
+read files **inside its own group container**. That is why every earlier attach attempt (files under
+`/tmp` or `~/Documents`) produced blank placeholders, and why the clipboard-paste method never
+embedded a single map on a scheduled run. `conditions.py` now copies each image to
+`~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox/` and lists those paths in
+the ATTACHMENTS footer. You attach exactly that list at save time; the `[{attachment}]` placeholders
+in the text position each image; PART 5 then opens the entry so Day One imports the bytes and
+verifies the count. The PDF is still built as a portable fallback and its path goes in the Slack post.
 
 ### What it produces
 - A **Moon** line for the week (phase, % illumination, short bite note).
+- A **Storm Watch** block (NOAA NHC, East Pacific): one line per named tropical storm / hurricane with
+  position, motion, closest approach to a report region and a tier — 🔴 **IMPACT** (34-kt wind field
+  within 60 nm of a region in the 5-day track), 🟠 **WATCH** (closest approach under 300 nm),
+  🟢 MONITOR (no regional threat) — plus an NHC link; a **Formation outlook** line when NHC's 7-day
+  odds are ≥ 60%; or "No named tropical storms or hurricanes in the East Pacific this week."
+- **Images, in entry order:** the 4 Conditions maps, then the storm set — the NHC **7-day outlook**
+  first (caption "Tropical / Hurricane — NOAA NHC East Pacific 7-day outlook"; it shows every
+  disturbance, named or not), then one **5-day forecast cone** per named storm. Each has a
+  `[{attachment}]` placeholder in the text and a line in the ATTACHMENTS footer.
 - **Core regions — always include:** Southern California Bight, Northern Baja, San Clemente & Catalina.
 - **Offshore banks — modeled:** Tanner/Cortez, Cedros/Guadalupe, Magdalena Bay, The Ridge, Alijos
   Rocks. The script outputs ALL of them, but **include a bank's line in the report ONLY if this
   week's YouTube or long-range reports actually mention that area** — otherwise delete that line.
-- **One PDF briefing** (`conditions_briefings/conditions_YYYYMMDD.pdf`) with the region tables plus
-  four maps — temp-break (NOAA MUR SST) and water-color (chlorophyll) for SoCal + Baja. Loose map PNGs
-  live in `conditions_maps/`. Both folders auto-prune files older than ~8 weeks.
+- **One PDF briefing** (`conditions_briefings/conditions_YYYYMMDD.pdf`) with the region tables, the
+  four maps — temp-break (NOAA MUR SST) and water-color (chlorophyll) for SoCal + Baja — and a Storm
+  Watch page (table, tiers, outlook, cones). Loose PNGs live in `conditions_maps/` and copies in the
+  Day One inbox. All three folders auto-prune files older than ~8 weeks.
 
 ### Data sources (no login, no Chrome)
 - Wind / swell / SST numbers — Open-Meteo Marine + Weather APIs (wind in KNOTS).
@@ -313,9 +331,14 @@ post carries its path either way.
   and its lag under each map: near-real-time 9 km first (~2-day lag), then the science-quality 9 km
   products (~11-day lag) as backstops. The old 2 km dataset `noaacwNPPN20S3ASCIDINEOF2kmDaily` was
   **retired by NOAA and now 404s** — that outage is what dropped both water-color maps on 2026-07-31.
+- Storm Watch — NOAA National Hurricane Center: `CurrentStorms.json`, each storm's TCM
+  forecast/advisory text (track points + wind radii), the TWO outlook text (formation odds), the
+  `two_pac_7d0.png` 7-day graphic and `storm_graphics/EP<nn>/<ID>_5day_cone.png` cones. Public, no key.
 - Moon — `ephem`.
 
 ### Graceful degrade
+- If the NHC feeds are unreachable the block prints `**⛈️ Storm Watch** — unavailable this run (…)`;
+  if one image fails its placeholder is simply not emitted. Post the report as printed. NOT an alert.
 - If a map source (NOAA MUR or chlorophyll) does not respond, the script still prints the text and
   notes that map type "unavailable"; if the PDF can't be built it says so. Post the report with
   whatever came back. This is NOT an alert condition.
@@ -347,12 +370,13 @@ LongRangeSportfishing.net
 ## 🌊 Conditions — Week of [Date Range]
 
 [Paste the Markdown printed by `conditions.py` (PART 4) VERBATIM — the moon line, the region lines
-(wind in kt, week ranges, the core/banks split), AND the "📄 Visual briefing" line with the PDF path.
-Do NOT rewrite, reformat, or invent these numbers. The only editing allowed: delete the Offshore-bank
-lines for areas this week's reports did NOT mention. Do NOT attach the maps or PDF via the Day One
-connector (its attachment function is broken — see PART 4); the PDF path is included as text so Ed can
-drop it in manually. If the script could not run, replace this whole section with a single line:
-"🌊 Conditions — unavailable this run." This is a forward-looking briefing header.]
+(wind in kt, week ranges, the core/banks split), the "📄 Visual briefing" line with the PDF path, every
+`_caption_` + `[{attachment}]` pair, and the whole **⛈️ Storm Watch** block with its own image pairs.
+Do NOT rewrite, reformat, or invent these numbers or the storm tiers. The only editing allowed: delete
+the Offshore-bank lines for areas this week's reports did NOT mention. **Never delete, move, or add a
+`[{attachment}]` line** — each one positions an image from the ATTACHMENTS list, in order. If the
+script could not run, replace this whole section with a single line: "🌊 Conditions — unavailable this
+run." and save with no attachments. This is a forward-looking briefing header.]
 
 ---
 
@@ -417,84 +441,40 @@ Example format:
 
 ---
 
-Save the completed report as a new Day One journal entry using **`mcp__dayone__create_journal_entry`** (text only), in the journal named "Saltwater Fishing Journal", tagged with: fishing, saltwater, weekly-report, SoCal, Baja. **Capture the entry UUID the tool returns — the next step (PART 5) needs it.**
-
-**Do NOT use `create_entry_with_attachments`.** The Day One CLI's media import is broken in this build — it records a moment but never embeds the bytes, so attached images become blank placeholders. Embed the maps with the clipboard-paste method in PART 5 instead (verified to create real, syncing photo moments that render on desktop + mobile).
+Save the completed report as a new Day One journal entry using **`mcp__dayone__create_journal_entry`**, in the journal named "Saltwater Fishing Journal", tagged with: fishing, saltwater, weekly-report, SoCal, Baja, and with **`attachments=` set to the exact list from the `<!-- ATTACHMENTS -->` footer of `conditions.py` (same paths, same order).** Those paths are inside Day One's group container on purpose — never substitute the `conditions_maps/` paths or any other location (the sandboxed app cannot read them and you get blank placeholders). If the footer is empty, save with no attachments. **Capture the entry UUID the tool returns — PART 5 needs it.**
 
 ---
 
-## PART 5 — Insert the Conditions maps into the entry (image embed — the working method)
+## PART 5 — Complete the image import and verify (no keystrokes, no computer-use)
 
-After the text entry is saved and you have its UUID, embed this run's `conditions_maps/*.png` images
-inline — up to four, in this order: SoCal temp-break, SoCal water-color, Baja temp-break, Baja
-water-color. **Skip this step entirely** if the Conditions section was "unavailable this run" (no maps
-were produced). Fewer than four is normal when a map source failed; embed what exists.
-
-Why this works when the connector doesn't: the Day One CLI cannot embed media in this build, but
-**pasting image data into an open entry creates a proper, syncing photo moment** (the file lands in
-`DayOnePhotos/<md5>.png` with a `![](dayone-moment://…)` marker — identical to the GUI "+" button).
-The helper script performs the whole sequence, including the keystroke.
-
-⚠️ **Reliability rules:**
-(a) A freshly-saved entry opens in *read* mode — the first map must go through `paste`, which opens
-the entry via `dayone://edit?entryId=…` so the editor has focus; sending a paste at a read-mode entry
-goes nowhere. (b) Use `clip_paste` for maps 2..N — it deliberately does **not** re-open the entry,
-because re-opening drops back to read mode. Do not interleave any other keystrokes between pastes.
-(c) Every `paste`/`clip_paste` prints `PASTED=<count>`; that count must rise by one each time. If one
-doesn't move, re-run that single `clip_paste` once.
-
-Helper: `tools/dayone_attach.sh` in the project folder (`FISHING_PROJECT_DIR` env var overrides the
-default path).
-
-**Get this run's map list first:** `bash tools/dayone_attach.sh list`. It prints only maps stamped
-with **today's** date, in insert order, and prints `MISSING:<file>` to **stderr** for any map that
-was not produced this run. Embed exactly what stdout lists — never substitute an older render, and
-expect fewer than 4 whenever a map source failed (see PART 4 graceful degrade).
-
-### Use the automated Bash path — do NOT use computer-use
-
-⛔ **`request_access` for Day One CANNOT be approved during a scheduled run.** It returns
-"Computer-use access to 'Day One' … can't be approved during a scheduled run", and the error states
-retrying returns the same result. Any earlier instruction here claiming that a one-time **Run Now**
-makes Cowork store the approval for later runs was **wrong** — it does not, and the session allowlist
-comes back empty. Do not spend a call on `request_access`; there is no GUI-permission path on a
-scheduled run.
-
-You do not need one. The helper's `paste` / `clip_paste` subcommands issue the Cmd+V **themselves**
-via `osascript` + System Events, so the whole step runs from **Bash**:
+Day One imports attachment bytes **lazily, the first time the entry is displayed**. Right after the
+save the entry exists with its placeholders but the photo count is 0. One helper call finishes it:
 
 ```bash
 cd "/Users/edmatibag/Documents/Claude/Projects/Weekly Saltwater Fishing Report"
 UUID="<entry uuid from the Day One save>"
-mapfile -t MAPS < <(bash tools/dayone_attach.sh list)   # today's maps only
-bash tools/dayone_attach.sh paste      "$UUID" "${MAPS[0]}"   # opens + focuses the entry, then pastes
-for m in "${MAPS[@]:1}"; do
-  bash tools/dayone_attach.sh clip_paste "$UUID" "$m"         # keeps edit focus, no re-open
-done
-bash tools/dayone_attach.sh count "$UUID"                     # must equal ${#MAPS[@]}
+bash tools/dayone_attach.sh trigger "$UUID"     # opens the entry, polls up to 90 s, prints EMBEDDED=N/N
 ```
 
-Each `paste` / `clip_paste` prints `PASTED=<new_count>`. That count must increase by one per map; if
-one doesn't move, re-run that single `clip_paste` once before giving up.
+`trigger` opens `dayone://edit?entryId=<uuid>` (Day One must be running — the helper launches it if
+not), then polls the embedded-photo count every 3 s until it reaches the number of lines in this
+run's attachment manifest (`tools/dayone_attach.sh inbox`). It prints `EMBEDDED=<have>/<want>` and
+exits 0 when they match. Verified 2026-09-11: 6/6 within 5 s.
 
-**Prerequisites — already satisfied on this machine; do not treat them as blockers.** System Events
-keystrokes need two separate macOS grants: **Accessibility** (Privacy & Security → Accessibility) and
-**Automation** for Apple Events to System Events / Day One (Privacy & Security → Automation). Both
-were **verified present on 2026-07-31**: the Claude entries are enabled in Accessibility, and an
-`osascript` probe against System Events returned normally with no permission prompt. So do **not**
-report a permissions problem, and do not ask Ed to grant anything, unless `PASTED=` actually fails to
-advance. If it does fail, re-probe with
-`osascript -e 'tell application "System Events" to return name of first application process'` — a
-permission dialog or an error there (rather than a process name) is the only real evidence of a
-permissions gap.
+**Skip this step entirely** if the Conditions section was "unavailable this run" (no attachments).
 
-**Fallback:** if the counts never advance, **do NOT fail the task** — the text report and the
-Conditions PDF are already saved. Post the report and let the Slack ACTION block (below) remind Ed to
-drop the PDF in manually. Embedded maps are the goal; the PDF reminder is the fallback.
+**If `EMBEDDED` is short after 90 s:** run `bash tools/dayone_attach.sh count "$UUID"` once more
+after ~30 s. If it is still short, **do NOT fail the task** — the entry and the PDF are already saved.
+Report `Maps: <have> of <want>` in the Slack post and include the ACTION block below; opening the
+entry on any device usually completes the import, and the PDF is the manual fallback.
 
-*(The legacy `stage` / `clip` subcommands still exist and only load the clipboard, leaving the Cmd+V
-to a GUI caller. They are unusable on a scheduled run for the reason above — prefer `paste` /
-`clip_paste`.)*
+⛔ **Do not use `paste` / `clip_paste` / `stage` / `clip`.** They implemented a clipboard-paste method
+that Day One's editor ignores — System Events keystrokes, the Edit ▸ Paste menu item and hardware-level
+CGEvent Cmd+V were all tested 2026-09-11 with the screen unlocked, Day One frontmost and the editor
+focused, and none inserted an image; the method embedded 0 of 4 maps on every scheduled run from
+2026-07-31 to 2026-09-11. The subcommands now print a warning and exit 3. Do not use the computer-use
+MCP either: `request_access` cannot be approved during a scheduled run, and nothing in this step needs
+it. No macOS Accessibility or Automation grant is involved in the new method.
 
 ---
 
@@ -514,19 +494,18 @@ The script always exits 0 and prints `alert-sent fishing-report-alerts` or `aler
 :fish: *Weekly Saltwater Fishing Report — [Date] posted to Day One.*
 • Sources: YouTube [N of 6 channels with new videos] | SD Landings [4 of 4] | Long Range [N boats]
 • Skipped / unavailable: [list any channels with no new video, "transcript unavailable (no captions)", or "transcript extraction failed — retry next run", or "none"]
-• Maps: [N of 4 Conditions maps embedded in the entry]
+• Maps: [N of M images embedded — 4 Conditions maps + NHC 7-day outlook + one cone per named storm; M = lines in the ATTACHMENTS footer]
+• Storm Watch: [one line — e.g. "TS Norbert, MONITOR (~710 nm from Alijos)" / "no named storms" / "IMPACT — Hurricane X, Mag Bay Tue"]
 • Top takeaway: [one-line headline from the Key Takeaways section]
 — Cowork Automated Alert
 ```
 
-If **all four maps embedded** (PART 5 succeeded), that's the whole message — no action needed from Ed.
+If **every image embedded** (`EMBEDDED=N/N` in PART 5), that's the whole message — no action needed from Ed.
 
-**Only if one or more maps did NOT embed** (PART 5 fell back), append this ACTION block so Ed can drop
-the PDF in manually:
+**Only if one or more images did NOT embed** (PART 5 came up short), append this ACTION block:
 
 ```
-:round_pushpin: *ACTION — maps didn't auto-embed this run; add the Conditions PDF to today's entry:*
-Open the file below and drag it into the entry with Day One's "+" button.
+:round_pushpin: *ACTION — <have> of <want> images imported so far. Open today's entry in Day One (Mac or phone) — opening it completes the import. If any map is still blank afterwards, drag the PDF in with the "+" button:*
 `[full PDF path from the conditions.py <!-- BRIEFING --> footer, e.g. /Users/edmatibag/Documents/Claude/Projects/Weekly Saltwater Fishing Report/conditions_briefings/conditions_YYYYMMDD.pdf]`
 (On Mac: Finder → Cmd+Shift+G → paste the path.)
 ```

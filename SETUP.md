@@ -64,7 +64,7 @@ All of these must be connected in Cowork for the task to run successfully.
 3. Say: *"Update the weekly-saltwater-fishing-report scheduled task with the contents of SKILL.md"*
 4. Claude will use the `/schedule` skill to push the update
 
-Or navigate directly to `~/Claude/Scheduled/weekly-saltwater-fishing-report/SKILL.md` in Finder and edit it — changes take effect on the next run.
+Or navigate directly to `~/.claude/scheduled-tasks/weekly-saltwater-fishing-report/SKILL.md` in Finder and edit it — changes take effect on the next run.
 
 ---
 
@@ -125,3 +125,18 @@ You can trigger the report at any time by opening Cowork in this project and say
 
 Or from any Cowork project:
 > *"Run scheduled task weekly-saltwater-fishing-report"*
+
+
+## Day One image import (added 2026-09-11)
+
+Day One on this Mac is the sandboxed App Store build. Images attach reliably only when:
+1. the file lives inside Day One's group container —
+   `~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox/` (`conditions.py`
+   copies every image there and lists the paths in its `<!-- ATTACHMENTS -->` footer), and
+2. the entry is displayed once after creation (`bash tools/dayone_attach.sh trigger <uuid>` opens it
+   and polls the photo count).
+
+Troubleshooting: `tools/dayone_attach.sh count <uuid>` prints the embedded-photo count (`?` if the DB
+copy can't be read). If it stays 0 after `trigger`, check that the attached paths are the inbox
+paths (not `conditions_maps/`), that the files still exist there (they are pruned after ~8 weeks),
+and that Day One is running. No Accessibility, Automation, or computer-use grant is involved.

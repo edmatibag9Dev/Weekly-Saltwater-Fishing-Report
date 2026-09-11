@@ -1,43 +1,46 @@
 #!/bin/bash
-# dayone_attach.sh — inserts weekly Conditions map images into a Day One entry via
-# clipboard paste. The Day One CLI's --attachments import is broken (records a moment
-# but never embeds bytes → blank placeholder). Pasting image data via System Events
-# creates a real, syncing photo moment identical to using the GUI "+" button.
+# dayone_attach.sh — verify (and, if needed, trigger) the import of this run's images into a
+# Day One entry.
 #
-# REQUIRES: two macOS grants for the host app — Accessibility (System Settings →
-# Privacy & Security → Accessibility) AND Automation for Apple Events to System
-# Events / Day One. Without them System Events keystrokes are blocked and paste
-# silently fails. Both were verified present on 2026-07-31, so treat a failed
-# paste as a focus/timing problem first, not a permissions problem; confirm with
-#   osascript -e 'tell application "System Events" to return name of first application process'
-# which returns a process name when Automation is granted.
+# HOW IMAGES GET INTO THE ENTRY (rewritten 2026-09-11 — read this before changing anything):
+#   Day One on this Mac is the sandboxed App Store build. Its CLI / connector attachment import
+#   reads the file lazily, the first time the entry is DISPLAYED, and it can only read files that
+#   live inside the app's own group container. Two consequences, both verified on 2026-09-11:
+#     1. Attach paths under /tmp, ~/Documents, or the project folder -> a moment is recorded but
+#        the bytes are never imported ("blank placeholder"). Attach the SAME file from
+#        ~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox/ -> it imports.
+#     2. The import happens when the entry is opened (`open "dayone://edit?entryId=<uuid>"`),
+#        ~5 s later; a freshly created entry that nobody has opened shows ZHASDATA=0 until then.
+#   So the run: conditions.py copies every produced image into CLI-Inbox and prints the ordered
+#   list in its `<!-- ATTACHMENTS -->` footer; the Day One save passes that list as `attachments=`
+#   (the text carries one `[{attachment}]` placeholder per image); then `trigger` opens the entry
+#   and polls until the count matches. No keystrokes anywhere.
+#
+#   The former clipboard-paste path (`paste` / `clip_paste`) is DEAD: System Events keystrokes,
+#   menu-driven Paste and even hardware-level CGEvent Cmd+V reach Day One but its editor ignores
+#   them (tested 2026-09-11, screen unlocked, Day One frontmost, editor focused). It never once
+#   embedded a map on a scheduled run (0 of 4 on every run from 2026-07-31 to 2026-09-11). The
+#   subcommands are kept only so old transcripts still parse; they print a warning and exit 3.
 #
 # Subcommands:
-#   list                          Print this run's Conditions map PNGs, in insert order. Only maps
-#                                 stamped with today's date qualify (override via FISHING_MAP_STAMP);
-#                                 anything missing prints MISSING:<file> to stderr and is skipped, so
-#                                 a stale render is never embedded in a fresh report.
+#   inbox                         Print this run's attachment list (the CLI-Inbox paths, in insert
+#                                 order) from conditions_maps/attachments_<stamp>.txt. Empty if
+#                                 conditions.py did not run today.
+#   trigger <ENTRY_UUID> [N]      Open the entry in Day One to start the lazy import, then poll the
+#                                 embedded-photo count every 3 s for up to 90 s until it reaches N
+#                                 (default: the number of lines `inbox` prints). Prints
+#                                 "EMBEDDED=<count>/<N>" and exits 0 when they match, 1 otherwise.
+#   list                          Print this run's map PNGs in conditions_maps/ (project-folder
+#                                 paths, today's stamp only; MISSING:<file> on stderr for absent
+#                                 maps). Informational — attach the `inbox` paths, not these.
 #   count <ENTRY_UUID>            Print the number of embedded photos (ZHASDATA=1) on the entry.
 #                                 Prints "?" (not 0) if the DB can't be read — the read is
 #                                 read-only, busy-timeout'd and hard-capped at
 #                                 DAYONE_DB_TIMEOUT_SECS (default 8), so it can never hang.
-#   paste <ENTRY_UUID> <IMG>      Open entry, move cursor to end, load IMG to clipboard, paste
-#                                 via System Events, wait for embed. Prints "PASTED=<new_count>".
-#                                 Use for the FIRST map — opens/focuses the entry.
-#   clip_paste <ENTRY_UUID> <IMG> Load IMG to clipboard and paste via System Events WITHOUT
-#                                 reopening the entry (preserves edit focus). Prints "PASTED=<new_count>".
-#                                 Use for maps 2..N.
+#   paste | clip_paste | stage | clip   DEPRECATED (see above). Exit 3.
 #
-#   -- Legacy subcommands (kept for backward compat) --
-#   stage <ENTRY_UUID> <IMG>      Open entry + load clipboard only. Prints "BASELINE=<n>". No paste.
-#   clip <IMG>                    Load clipboard only. No paste.
-#
-# Fully automated usage (no computer-use needed — call via mcp__Control_your_Mac__osascript):
-#   bash tools/dayone_attach.sh paste      "$UUID" "$MAP1"
-#   bash tools/dayone_attach.sh clip_paste "$UUID" "$MAP2"
-#   bash tools/dayone_attach.sh clip_paste "$UUID" "$MAP3"
-#   bash tools/dayone_attach.sh clip_paste "$UUID" "$MAP4"
-#   bash tools/dayone_attach.sh count "$UUID"   # verify == 4
+# Env: FISHING_PROJECT_DIR (project folder), FISHING_MAP_STAMP (YYYYMMDD, for replays),
+#      DAYONE_DB_TIMEOUT_SECS.
 
 set -euo pipefail
 
@@ -45,8 +48,9 @@ PROJECT_DIR="${FISHING_PROJECT_DIR:-/Users/edmatibag/Documents/Claude/Projects/W
 MAPS_DIR="$PROJECT_DIR/conditions_maps"
 DB="$HOME/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/DayOne.sqlite"
 
-# Insert order: SoCal temp-break, SoCal water-color, Baja temp-break, Baja water-color.
-MAP_KEYS=(socal_temp_break socal_water_color baja_temp_break baja_water_color)
+# Insert order: SoCal temp-break, SoCal water-color, Baja temp-break, Baja water-color, then the
+# NHC 7-day outlook and any storm_<name> forecast cones (globbed, since storm names vary).
+MAP_KEYS=(socal_temp_break socal_water_color baja_temp_break baja_water_color storm_outlook)
 
 # Only maps rendered for THIS run are eligible. Override for a backfill/replay.
 STAMP="${FISHING_MAP_STAMP:-$(date +%Y%m%d)}"
@@ -141,63 +145,50 @@ embedded_count() {
 
 cmd="${1:-}"
 case "$cmd" in
+  inbox)
+    m="$MAPS_DIR/attachments_$STAMP.txt"
+    [ -f "$m" ] && cat "$m"
+    ;;
+  trigger)
+    uuid="${2:?entry uuid required}"
+    m="$MAPS_DIR/attachments_$STAMP.txt"
+    if [ -n "${3:-}" ]; then want="$3"; else want=$( [ -f "$m" ] && grep -c . "$m" || echo 0 ); fi
+    if [ "$want" = "0" ]; then echo "EMBEDDED=0/0 (nothing to attach this run)"; exit 0; fi
+    open -a "Day One" 2>/dev/null || true
+    sleep 1
+    open "dayone://edit?entryId=$uuid"
+    have="?"
+    for i in $(seq 1 30); do
+      sleep 3
+      have="$(embedded_count "$uuid")"
+      if [ "$have" != "?" ] && [ "$have" -ge "$want" ] 2>/dev/null; then
+        echo "EMBEDDED=$have/$want"; exit 0
+      fi
+    done
+    echo "EMBEDDED=$have/$want"
+    exit 1
+    ;;
   list)
     for k in "${MAP_KEYS[@]}"; do
       f="$(map_for_stamp "$k")"
       [ -n "$f" ] && echo "$f" || echo "MISSING:${k}_${STAMP}.png" >&2
     done
+    for f in "$MAPS_DIR"/storm_*_"$STAMP".png; do
+      [ -f "$f" ] || continue
+      case "$f" in *storm_outlook_*) continue ;; esac
+      echo "$f"
+    done
     ;;
   count)
     embedded_count "${2:?entry uuid required}"
     ;;
-  clip)
-    img="${2:?image path required}"
-    [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
-    osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
-    echo "CLIPPED=$(basename "$img")"
-    ;;
-  paste)
-    # Open entry, load image to clipboard, paste via System Events — no computer-use needed.
-    uuid="${2:?entry uuid required}"
-    img="${3:?image path required}"
-    [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
-    open -a "Day One" 2>/dev/null || true
-    sleep 1
-    open "dayone://edit?entryId=$uuid"
-    sleep 3
-    osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
-    sleep 0.5
-    osascript -e 'tell application "System Events" to tell process "Day One" to keystroke "v" using command down'
-    sleep 4
-    echo "PASTED=$(embedded_count "$uuid")"
-    ;;
-  clip_paste)
-    # Load image to clipboard and paste via System Events — does NOT reopen the entry.
-    # Use for maps 2..N while Day One editor is already focused on the entry.
-    uuid="${2:?entry uuid required}"
-    img="${3:?image path required}"
-    [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
-    osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
-    sleep 0.5
-    osascript -e 'tell application "System Events" to tell process "Day One" to keystroke "v" using command down'
-    sleep 4
-    echo "PASTED=$(embedded_count "$uuid")"
-    ;;
-  stage)
-    # Legacy: open entry + load clipboard. Caller must send Cmd+V externally.
-    uuid="${2:?entry uuid required}"
-    img="${3:?image path required}"
-    [ -f "$img" ] || { echo "ERROR: image not found: $img" >&2; exit 1; }
-    base="$(embedded_count "$uuid")"
-    open -a "Day One" 2>/dev/null || true
-    sleep 1
-    open "dayone://edit?entryId=$uuid"
-    sleep 2
-    osascript -e "set the clipboard to (read (POSIX file \"$img\") as «class PNGf»)"
-    echo "BASELINE=$base"
+  paste|clip_paste|stage|clip)
+    echo "DEPRECATED: '$cmd' used the clipboard-paste path, which Day One's editor ignores (2026-09-11)." >&2
+    echo "Use: create the entry with attachments= from '$0 inbox', then '$0 trigger <uuid>'." >&2
+    exit 3
     ;;
   *)
-    echo "usage: $0 {list|count <uuid>|paste <uuid> <img>|clip_paste <uuid> <img>|stage <uuid> <img>|clip <img>}" >&2
+    echo "usage: $0 {inbox|trigger <uuid> [N]|list|count <uuid>}" >&2
     exit 2
     ;;
 esac

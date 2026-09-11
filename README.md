@@ -12,11 +12,11 @@ scheduled task (Friday 9:02 AM Pacific) pulls the week's transcripts from six Yo
 headlessly (`tools/yt_transcript.py` — channel feeds + `youtube_transcript_api`, Chrome only as a
 per-video fallback), scrapes four San Diego landings and LongRangeSportfishing.net through the Chrome
 extension, then runs a headless **Conditions engine** (`conditions.py`) that pulls live numbers and
-renders maps with no Chrome and no logins. Everything
-lands in one Day One entry: the Conditions maps are embedded as real photo moments by pasting image
-data into the saved entry (the Day One connector's own attachment import is broken — it records a
-moment without the bytes), with a one-page PDF built alongside as a portable fallback. Built for Ed,
-who reads the report on Day One's desktop and mobile apps.
+renders maps and pulls NOAA National Hurricane Center storm data with no Chrome and no logins.
+Everything lands in one Day One entry: the Conditions maps and the NHC storm graphics are attached
+at save time from Day One's sandbox-readable inbox and positioned inline with `[{attachment}]`
+placeholders, with a PDF built alongside as a portable fallback. Built for Ed, who reads the report
+on Day One's desktop and mobile apps.
 
 ## Features
 
@@ -26,8 +26,15 @@ who reads the report on Day One's desktop and mobile apps.
 - **Water-color maps** — DINEOF gap-filled chlorophyll (clean-blue vs. green-water edges), fetched
   through a fallback chain of NOAA datasets so one retired product can't blank the map; each map
   footer names the dataset and its lag.
-- **One-page PDF briefing** — region tables + every map produced that run, brand-styled, dated,
-  auto-pruned >8 wks.
+- **Storm Watch** — every named East Pacific tropical storm / hurricane rated against the report
+  regions (IMPACT / WATCH / MONITOR by closest approach of the NHC 5-day track and 34-kt wind radii),
+  a formation-outlook line when NHC's 7-day odds are ≥ 60%, and images: the NHC 7-day outlook
+  graphic (first, showing every disturbance) plus one 5-day forecast cone per named storm.
+- **Images that embed** — every image is copied into Day One's group container and attached at save
+  time; `tools/dayone_attach.sh trigger` opens the entry so Day One completes its lazy import and
+  verifies the count.
+- **PDF briefing** — region tables + every map produced that run + a Storm Watch page, brand-styled,
+  dated, auto-pruned >8 wks.
 - **YouTube / landing / long-range intel** — what's biting, lures & techniques, where, fish counts.
 - **Resilient by design** — numbers from a JSON API, maps rendered headlessly; a Conditions failure
   is non-fatal (the report still posts).
@@ -37,7 +44,7 @@ who reads the report on Day One's desktop and mobile apps.
 
 | File | Role |
 |---|---|
-| `conditions.py` | Conditions engine — Open-Meteo numbers, NOAA MUR + chlorophyll maps, ephem moon, reportlab PDF |
+| `conditions.py` | Conditions engine — Open-Meteo numbers, NOAA MUR + chlorophyll maps, NOAA NHC Storm Watch + storm graphics, ephem moon, Day One inbox staging, reportlab PDF |
 | `SKILL.md` | The scheduled-task prompt (sources, report format, Slack/alert protocol) |
 | `CLAUDE.md` | Project instructions, required connectors, known behaviors |
 | `AGENTS.md` | Canonical AI-agent guide (file map, data contract, how-to-extend) |
@@ -46,7 +53,8 @@ who reads the report on Day One's desktop and mobile apps.
 | `BUILD-PLAN.md` | Architecture, decisions, findings |
 | `CHANGELOG.md` / `CONTRIBUTING.md` | History / commit + doc standards |
 | `tools/yt_transcript.py` | Headless YouTube step — channel Atom feeds → drop Shorts → newest captioned upload → transcript via `youtube_transcript_api`; one status line per channel |
-| `tools/dayone_attach.sh` | Embeds the run's maps into the saved Day One entry (clipboard paste via osascript) |
+| `tools/dayone_attach.sh` | `inbox` (this run's attachable paths), `trigger <uuid>` (open the entry so Day One imports the attachments; poll the count), `list`, `count` |
+| `samples/` | Committed sample stdout, PDF, and a TCM advisory for the offline parser check |
 | `requirements.txt` | Python deps for `conditions.py` |
 | `conditions_maps/`, `conditions_briefings/`, `youtube_transcripts/` | Generated outputs (gitignored; auto-pruned after ~8 weeks) |
 
@@ -60,9 +68,11 @@ pip install -r requirements.txt --break-system-packages -q
 python3 conditions.py
 ```
 
-This prints the ready-to-paste Conditions Markdown and writes
-`conditions_briefings/conditions_YYYYMMDD.pdf`. The full weekly report (with the Chrome-scraped
-intel) is produced by the Cowork scheduled task — see SCHEDULE.md.
+This prints the ready-to-paste Conditions Markdown (region lines, Storm Watch, one `[{attachment}]`
+per image), writes `conditions_briefings/conditions_YYYYMMDD.pdf`, copies the images into Day One's
+inbox, and ends with `<!-- BRIEFING -->` (PDF path) and `<!-- ATTACHMENTS -->` (ordered inbox paths)
+footers. The full weekly report (with the Chrome-scraped intel) is produced by the Cowork scheduled
+task — see SCHEDULE.md.
 
 **Pull this week's YouTube transcripts (no Chrome needed):**
 
@@ -75,15 +85,17 @@ Prints one status line per channel (`OK` / `NO_NEW_VIDEO` / `NO_CAPTIONS` / `FET
 Use `/usr/bin/python3` literally — the library is installed for the system Python, not Homebrew's.
 Only `FETCH_FAILED` / `FEED_FAILED` channels go through the Chrome fallback in SKILL.md Part 1.
 
-**Embed the maps into a saved entry** (after the Day One entry exists — needs its UUID):
+**Get the images into the entry.** Create the entry with `attachments=` set to the ATTACHMENTS list
+(the Day One connector's `create_journal_entry` does this; keep every `[{attachment}]` in the text),
+then let Day One import the bytes:
 
 ```bash
-UUID="<entry uuid>"
-mapfile -t MAPS < <(bash tools/dayone_attach.sh list)   # today's maps only
-bash tools/dayone_attach.sh paste      "$UUID" "${MAPS[0]}"
-for m in "${MAPS[@]:1}"; do bash tools/dayone_attach.sh clip_paste "$UUID" "$m"; done
-bash tools/dayone_attach.sh count "$UUID"               # must equal ${#MAPS[@]}
+bash tools/dayone_attach.sh inbox              # this run's attachable paths, in order
+bash tools/dayone_attach.sh trigger "<uuid>"   # opens the entry, polls until EMBEDDED=N/N
 ```
+
+Only paths inside `~/Library/Group Containers/5U8NS4GX82.dayoneapp2/…` import — the App Store build
+is sandboxed. Attaching from `/tmp` or `~/Documents` records a blank placeholder.
 
 ## Configuration
 
@@ -99,6 +111,7 @@ gitignored `CONFIG.local.md`).
 | [Open-Meteo Marine](https://marine-api.open-meteo.com/) + [Weather](https://api.open-meteo.com/) | Wind (kt), swell, SST numbers per region | 7-day forecast, live |
 | [NOAA CoastWatch ERDDAP](https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41.html) — `jplMURSST41` | Temperature-break maps (MUR 1 km SST) | ~1-day lag |
 | [NOAA CoastWatch ERDDAP](https://coastwatch.noaa.gov/erddap/) — `CHL_DATASETS` chain: `noaacwNPPN20VIIRSDINEOFDaily` → `noaacwNPPN20S3ASCIDINEOFDaily` → `noaacwNPPN20VIIRSSCIDINEOFDaily` | Water-color (chlorophyll) maps | ~2-day lag (NRT) / ~11-day (science backstops) |
+| [NOAA National Hurricane Center](https://www.nhc.noaa.gov/?epac) — `CurrentStorms.json`, `text/MIATCMEP<n>.shtml` (forecast/advisory), `text/MIATWOEP.shtml` (outlook), `xgtwo/two_pac_7d0.png`, `storm_graphics/EP<nn>/<ID>_5day_cone.png` | Storm Watch tiers, formation odds, 7-day outlook + cone images | Advisories every 6 h; outlook 4×/day |
 | `ephem` | Moon phase + illumination | Computed, no network |
 | 6 YouTube channels — public Atom feed (`youtube.com/feeds/videos.xml?channel_id=…`) + [`youtube_transcript_api`](https://pypi.org/project/youtube-transcript-api/) 1.2.4 | Bite intel, lures, locations | Newest captioned non-Short upload in the last 7 days; Chrome UI is the per-video fallback |
 | [sandiegofishreports.com](https://www.sandiegofishreports.com/) · [longrangesportfishing.net](https://www.longrangesportfishing.net/fishreports.php) | Dock counts, boat reports | Scraped weekly via Chrome |
@@ -107,18 +120,21 @@ All sources are public HTTP with no keys or logins.
 
 ## Known Limitations / Workarounds
 
-- The Day One connector cannot embed attachments, so maps are embedded by pasting image data into
-  the saved entry via `tools/dayone_attach.sh` (`paste` / `clip_paste`). Those subcommands send the
-  keystroke themselves through `osascript`, so the step runs from Bash and needs **no computer-use
-  grant** — which matters because computer-use access cannot be approved during a scheduled run. It
-  does need two macOS grants, **Accessibility** and **Automation** (Apple Events → System Events /
-  Day One); both were verified present on 2026-07-31 and are not currently a blocker. If the paste
-  fails, the run still posts and the Slack message carries the PDF path as a manual fallback.
+- Day One is the sandboxed App Store build: attachments import only from inside its group container,
+  and only when the entry is first displayed. `conditions.py` stages the images in `CLI-Inbox/`, the
+  run attaches those paths, and `tools/dayone_attach.sh trigger` opens the entry and verifies the
+  count. The clipboard-paste method it replaces never embedded a map on a scheduled run (0/4 from
+  2026-07-31 to 2026-09-11) and is deprecated. If the count comes up short, the run still posts and
+  the Slack message asks Ed to open the entry (which completes the import) or drag the PDF in.
+- Storm Watch thresholds (60 nm / 300 nm / 60%) are this report's conventions, not NHC guidance; NHC's
+  own day-4 track error averages ~100 nm and the block says so. The cone URL pattern was verified on
+  one storm (Norbert, EP142026).
 - Conditions data is satellite/model-derived: NOAA MUR SST lags ~1 day, chlorophyll ~2 days on the
   near-real-time product (~11 on the science-quality backstops), and Baja offshore has no buoys —
   useful for planning, not ground truth.
-- Embed only the current run's maps. `dayone_attach.sh list` is date-scoped and reports
-  `MISSING:<file>` on stderr; fewer than four maps is normal when a source is down.
+- Attach only the current run's images. The ATTACHMENTS footer and `attachments_<stamp>.txt` are
+  rewritten each run and `dayone_attach.sh list` / `inbox` are date-scoped; fewer images is normal
+  when a source is down and the placeholder count always matches.
 - `dayone_attach.sh count` prints `?` (not `0`) when the Day One database cannot be read — it reads
   a snapshot copy under an 8 s cap so it can never hang PART 5 (it did on 2026-08-07). Treat `?` as
   "unknown", never as "no photos embedded".
@@ -146,6 +162,13 @@ All sources are public HTTP with no keys or logins.
   failure means the dataset or host changed.
 - **Moon line or PDF missing.** The environment is missing `ephem` or `reportlab`/`pillow`; both
   degrade silently. Re-run `pip install -r requirements.txt --break-system-packages -q`.
+- **Images show as blank placeholders.** The attached paths were not the inbox paths, or the files
+  were pruned before the entry was first opened. Re-attach from `CLI-Inbox/` and run `trigger`.
+- **`trigger` stays short.** Day One not running, or the entry never got focus; open it once on any
+  device and re-run `count`. `?` from `count` means the DB snapshot could not be read, not zero.
+- **Storm Watch "unavailable this run".** `nhc.noaa.gov` unreachable from the sandbox; the text
+  links still print. A cone 404 on a new storm means the URL pattern differs — check the storm's
+  graphics page (`forecastGraphics.url` in `CurrentStorms.json`).
 - **`FETCH_FAILED … IpBlocked`** from `tools/yt_transcript.py`. YouTube is rate-limiting this IP,
   not a script bug. Do not re-run; use the Chrome fallback for the printed URLs. Two weeks running
   is the signal to add `yt-dlp` with a PO-token provider.
@@ -163,7 +186,9 @@ All sources are public HTTP with no keys or logins.
 ## Build Notes
 
 Python 3 with a deliberately small dependency set — `matplotlib` + `numpy` for map rendering,
-`ephem` for the moon, `reportlab` + `pillow` for the PDF. No web framework, no database, no API keys:
+`ephem` for the moon, `reportlab` + `pillow` for the PDF; Storm Watch uses only the standard library
+(the NHC track comes from the TCM text product, so no shapefile reader is needed). No web framework,
+no database, no API keys:
 every source is public HTTP, so the Conditions engine runs headless and offline of any browser. That
 separation is the core architectural decision — browser screenshots can't be written to disk on a
 scheduled run, so maps are rendered from raw NOAA grids rather than captured from an interactive

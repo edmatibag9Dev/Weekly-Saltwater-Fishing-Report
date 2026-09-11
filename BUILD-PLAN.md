@@ -44,10 +44,20 @@ ephem (moon) ─────────┘                     ▼
 
 ---
 
-## 3. The Day One attachment finding (the big one)
+## 3. The Day One attachment finding (the big one) — SUPERSEDED 2026-09-11
 
-The original plan was to attach the map PNGs to the Day One entry. It doesn't work in this setup —
-and we proved it methodically:
+**2026-09-11 root cause:** Day One is the sandboxed App Store build. Its attachment import can only
+read files inside the app's group container, and it imports lazily when the entry is first
+displayed. Every June test attached from `/tmp` or `~/Documents`, so the moment was recorded and the
+bytes never read. Attaching the same file from
+`~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox/` and then opening the
+entry (`dayone://edit?entryId=…`) imports it in ~5 s — 6/6 verified, placeholders position the
+images inline. The clipboard-paste workaround that replaced the PDF-drag in June never embedded a map
+on a scheduled run (0/4 from 2026-07-31 to 2026-09-11) and is now deprecated. See CHANGELOG
+2026-09-11 and AGENTS.md "attachment mechanics". The June record is kept below for history.
+
+The original plan was to attach the map PNGs to the Day One entry. It appeared not to work — and we
+"proved" it methodically, but every test shared the one variable that mattered (file location):
 
 - `create_entry_with_attachments` returns "success" with the right **count**, but the images render
   as **blank grey placeholders**.
@@ -58,10 +68,9 @@ and we proved it methodically:
 - **Decisive test:** the *same* file dragged into the entry via Day One's own "+" button renders
   perfectly (desktop + mobile). A connector-attached PDF also failed; a manually-added PDF works.
 
-Conclusion: the connector's attach path never imports the bytes. **Workaround:** post text only, ship
-maps as a PDF in `conditions_briefings/`, and Ed adds it with "+". The Slack success post carries the
-PDF path (Slack doesn't make local `file://` paths clickable, so it's a copyable code span; on Mac,
-Finder → Cmd+Shift+G → paste).
+June conclusion (now known to be wrong): "the connector's attach path never imports the bytes."
+What was actually true: it never imports bytes *from outside the sandbox*. The PDF remains the
+portable fallback and its path still rides in the Slack post.
 
 ---
 

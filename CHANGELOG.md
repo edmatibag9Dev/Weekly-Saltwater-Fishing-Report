@@ -5,6 +5,65 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-09-11] — Storm Watch + images that actually embed
+
+### Added
+- **Storm Watch** in the Conditions section (`storm_watch()` in `conditions.py`). Reads NOAA National
+  Hurricane Center feeds — `CurrentStorms.json`, each storm's TCM forecast/advisory text (12-hourly
+  track points to 120 h + 34-kt wind radii), the TWO outlook text — and rates every named East
+  Pacific storm against the eight report regions by great-circle closest approach:
+  **IMPACT** (34-kt field within 60 nm of a region point in the 5-day track), **WATCH** (< 300 nm),
+  **MONITOR** (no regional threat). A formation-outlook line prints when NHC's 7-day odds are ≥ 60%.
+  Every storm line links its NHC page, so the block is useful even with no images. Named storms
+  always print; depressions only when they threaten a region. Constants at the top of the section.
+- **Storm images:** the NHC East Pacific **7-day graphical outlook** (`xgtwo/two_pac_7d0.png`, always
+  first in the storm set — it shows every disturbance, named or not; caption "Tropical / Hurricane —
+  NOAA NHC East Pacific 7-day outlook") and one official **5-day forecast cone** per named storm
+  (`storm_graphics/EP<nn>/<ID>_5day_cone.png`). Plain PNGs at stable URLs derived from the storm ID;
+  no shapefile library needed. Storm images follow the four Conditions maps in the entry.
+- **PDF:** a Storm Watch page (storm table, tier lines, outlook + cones).
+- `samples/tcm_sample.txt` (Norbert advisory #8) for an offline parser check (AGENTS gate 7).
+
+### Fixed — the image embed, root-caused
+- **Images never embedded on a scheduled run.** Slack success posts show `Maps: 0 of 4` on every run
+  from 2026-07-31 through 2026-09-11; the only 4/4 (2026-07-24) was interactive. Interactive tests on
+  2026-09-11 (screen unlocked, Day One frontmost, editor focused) showed the clipboard-paste method is
+  dead: System Events keystrokes, the Edit ▸ Paste menu item and hardware-level CGEvent Cmd+V all reach
+  Day One and are ignored by its editor (a typed marker never appeared in the text area either).
+- **Root cause of the June "connector can't embed" finding:** Day One is the sandboxed App Store
+  build (`com.apple.security.app-sandbox` on the app and its bundled `dayone` CLI). Its attachment
+  import (a) can only read files **inside the app's group container** and (b) runs **lazily, the
+  first time the entry is displayed**. Files under `/tmp` or `~/Documents` — every path tried in
+  June — record a moment but never import bytes. The same file attached from
+  `~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox/` imports ~5 s after
+  `open "dayone://edit?entryId=<uuid>"`. Verified 6/6 (4 maps + outlook + cone) on a test entry,
+  positioned inline by `[{attachment}]` placeholders. Day One 2026.18.
+- **New delivery path:** `conditions.py` copies every image into `CLI-Inbox/`, emits one
+  `_caption_` + `[{attachment}]` pair per image in stdout, and prints the ordered inbox paths in an
+  `<!-- ATTACHMENTS -->` footer (also `conditions_maps/attachments_<stamp>.txt`). The run passes that
+  list verbatim as `attachments=` to `create_journal_entry`, then
+  `tools/dayone_attach.sh trigger <uuid>` opens the entry and polls the photo count (`EMBEDDED=N/N`).
+  No keystrokes, no computer-use, no Accessibility/Automation grant.
+- `tools/dayone_attach.sh`: new `inbox` and `trigger` subcommands; `list` now includes the storm
+  images; `paste` / `clip_paste` / `stage` / `clip` are deprecated (warning, exit 3).
+- Docs (`SCHEDULE.md`, `CLAUDE.md`, `SETUP.md`) pointed at `~/Claude/Scheduled/…` for the live task
+  prompt; that folder does not exist. The live file is
+  `~/.claude/scheduled-tasks/weekly-saltwater-fishing-report/SKILL.md`.
+
+### Changed
+- SKILL.md (repo + live copy): Part 4 describes Storm Watch and the ATTACHMENTS footer; the
+  Report Format keeps placeholders verbatim; the save step passes `attachments=`; PART 5 is now the
+  one-line `trigger` + verify; the Slack post reports `Maps: N of M` plus a Storm Watch line and the
+  ACTION block tells Ed that opening the entry completes a short import.
+- README, AGENTS.md (file map, mechanics section, extend, gates 5 + 7), SPEC-conditions.md (NHC
+  source, assessment tiers, ATTACHMENTS contract, inbox copies), BUILD-PLAN §3, llms.txt, CLAUDE.md,
+  `samples/conditions_sample.txt` updated.
+
+### Dead ends recorded (do not retry)
+- `dayone://post?…&imageClipboard=1` creates the entry without the image.
+- Attaching from `/tmp`, `~/Documents`, the project folder: blank placeholders (sandbox).
+- Any keystroke-driven paste into the Day One editor.
+
 ## [2026-09-09] — YouTube transcripts: library first, Chrome fallback
 
 ### Added

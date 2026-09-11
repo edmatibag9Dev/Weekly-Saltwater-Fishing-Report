@@ -3,12 +3,21 @@
 Weekly Conditions generator for the Saltwater Fishing Report.
 
 Produces:
-  1. A Markdown "Conditions" section printed to stdout (capture this into the report).
-  2. Two temperature-break PNG maps written to ./conditions_maps/ .
+  1. A Markdown "Conditions" section printed to stdout (capture this into the report), including
+     a Storm Watch block (named East Pacific tropical storms / hurricanes vs. the report regions)
+     and `[{attachment}]` placeholders that position the images inline in the Day One entry.
+  2. Map PNGs in ./conditions_maps/ (temp-break, water-color, NHC 7-day outlook, NHC forecast cones).
+  3. A PDF briefing in ./conditions_briefings/ (region tables, maps, Storm Watch).
+  4. Copies of every produced image in Day One's sandbox-readable inbox
+     (~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox/) plus an ordered
+     manifest, so the run can pass them as `attachments=` when it creates the entry.
 
 Data sources (no Chrome, no login required):
   - Wind / swell / SST numbers ....... Open-Meteo Marine + Weather APIs
   - Temperature-break maps ........... NOAA MUR 1 km SST via NOAA CoastWatch ERDDAP
+  - Water-color maps ................. DINEOF gap-filled chlorophyll via NOAA CoastWatch ERDDAP
+  - Storm Watch ...................... NOAA National Hurricane Center (CurrentStorms.json, the
+                                       TCM forecast/advisory text, the TWO outlook text + graphic)
   - Moon phase ....................... ephem (falls back to an approximation)
 
 Safe to re-run. Degrades gracefully: if the map server is unavailable the text
@@ -30,6 +39,16 @@ BRIEF_DIR = os.path.join(HERE, "conditions_briefings")
 os.makedirs(MAPS_DIR, exist_ok=True)
 os.makedirs(BRIEF_DIR, exist_ok=True)
 
+# Day One is the sandboxed App Store build. Its CLI/connector attachment import can only read
+# files that live inside the app's own group container -- anything under /tmp or ~/Documents is
+# silently skipped, which is what produced "blank placeholder" attachments for months. Every image
+# this script produces is therefore also copied here, and the run attaches THESE paths.
+# Override with DAYONE_INBOX (e.g. when testing on another Mac). If the container does not exist
+# the copy step is skipped and no placeholders are emitted.
+DAYONE_INBOX = os.environ.get(
+    "DAYONE_INBOX",
+    os.path.expanduser("~/Library/Group Containers/5U8NS4GX82.dayoneapp2/Data/Documents/CLI-Inbox"))
+
 def _plain(s):
     """Strip markdown bold/italic and emoji for PDF text (reportlab core fonts lack emoji glyphs)."""
     s = s.replace("**", "").replace("_", "")
@@ -38,7 +57,9 @@ def _plain(s):
 def prune_old(days=56):
     """Delete map/briefing files older than ~8 weeks so the folders don't grow forever."""
     cutoff = datetime.datetime.now().timestamp() - days * 86400
-    for d in (MAPS_DIR, BRIEF_DIR):
+    for d in (MAPS_DIR, BRIEF_DIR, DAYONE_INBOX):
+        if not os.path.isdir(d):
+            continue
         for f in glob.glob(os.path.join(d, "*")):
             try:
                 if os.path.isfile(f) and os.path.getmtime(f) < cutoff:
@@ -316,7 +337,222 @@ def build_maps():
         out["baja_chl"] = (None, str(e))
     return out
 
-def build_pdf(week_range, moon_plain, rows, maps):
+
+# ---------------- Storm Watch (NOAA National Hurricane Center) ----------------
+# Named East Pacific tropical storms / hurricanes assessed against the report regions.
+# Sources (public, no key):
+#   CurrentStorms.json  -> every active storm with its advisory links
+#   TCM forecast/advisory text -> 12-hourly track points to 120 h, max wind, 34/50/64-kt radii
+#   TWO outlook text + 7-day graphic -> formation odds for disturbances that are not yet named
+NHC_CURRENT   = "https://www.nhc.noaa.gov/CurrentStorms.json"
+NHC_TWO_TEXT  = "https://www.nhc.noaa.gov/text/MIATWOEP.shtml"
+NHC_TWO_7DAY  = "https://www.nhc.noaa.gov/xgtwo/two_pac_7d0.png"
+NHC_TWO_PAGE  = "https://www.nhc.noaa.gov/gtwo.php?basin=epac&fdays=7"
+NHC_EPAC_PAGE = "https://www.nhc.noaa.gov/?epac"
+STORM_IMPACT_NM = 60     # 34-kt wind field reaches within this many nm of a region point -> IMPACT
+STORM_WATCH_NM  = 300    # closest approach under this -> WATCH
+STORM_FORMATION_MIN_PCT = 60   # print a formation-outlook line only at/above this 7-day chance
+STORM_MAX_CONES = 5      # Day One attachments are capped at 10; 4 maps + outlook + up to 5 cones
+
+def _nm(lat1, lon1, lat2, lon2):
+    """Great-circle distance in nautical miles."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = p2 - p1; dl = math.radians(lon2 - lon1)
+    h = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * 3440.07 * math.asin(math.sqrt(h))
+
+def _fetch_text(url):
+    raw = _urlopen(url, 30).read().decode("utf-8", "replace")
+    m = re.search(r"<pre[^>]*>(.*?)</pre>", raw, re.S)
+    if m:
+        import html as _html
+        return _html.unescape(re.sub(r"<[^>]+>", "", m.group(1)))
+    return raw
+
+def _storm_label(cls, kt):
+    cls = (cls or "").upper()
+    if cls == "HU":
+        cat = 1 if kt < 83 else 2 if kt < 96 else 3 if kt < 113 else 4 if kt < 137 else 5
+        return f"Hurricane (Cat {cat})", "Hurricane"
+    return {"TS": ("Tropical Storm", "TS"), "TD": ("Tropical Depression", "TD"),
+            "STS": ("Subtropical Storm", "STS"), "STD": ("Subtropical Depression", "STD"),
+            "PTC": ("Potential Tropical Cyclone", "PTC")}.get(cls, (cls or "System", cls or ""))
+
+def _parse_tcm(text):
+    """Track points from a TCM product: [(label, lat, lon, max_kt, r34_nm)]. Positions are N/W only
+    (East Pacific). r34 is the largest 34-kt quadrant radius, 0 when not given."""
+    pts = []
+    m = re.search(r"CENTER LOCATED NEAR\s+([\d.]+)N\s+([\d.]+)W AT (\d\d)/(\d\d)\d\dZ", text)
+    if m:
+        mw = re.search(r"MAX SUSTAINED WINDS\s+(\d+) KT", text)
+        r = re.search(r"MAX SUSTAINED WINDS.*?\n(?:.*\n){0,4}?34 KT\.+\s*(\d+)NE\s+(\d+)SE\s+(\d+)SW\s+(\d+)NW", text)
+        pts.append((f"{m.group(3)}/{m.group(4)}Z", float(m.group(1)), -float(m.group(2)),
+                    int(mw.group(1)) if mw else 0, max(map(int, r.groups())) if r else 0))
+    for blk in re.finditer(r"(?:FORECAST|OUTLOOK) VALID (\d\d)/(\d\d)\d\dZ\s+([\d.]+)N\s+([\d.]+)W\s*\n"
+                           r"MAX WIND\s+(\d+) KT.*?\n((?:\s*\d+ KT\.+.*\n)*)", text):
+        dd, hh, la, lo, mw, radii = blk.groups()
+        r = re.search(r"34 KT\.+\s*(\d+)NE\s+(\d+)SE\s+(\d+)SW\s+(\d+)NW", radii)
+        pts.append((f"{dd}/{hh}Z", float(la), -float(lo), int(mw), max(map(int, r.groups())) if r else 0))
+    return pts
+
+def _tcm_day_label(label):
+    """'12/00Z' -> 'Sat Sep 12' using the current month (rolls to next month when the day is behind)."""
+    try:
+        dd = int(label.split("/")[0])
+        d = TODAY.replace(day=dd)
+        if dd < TODAY.day - 20:
+            d = (TODAY.replace(day=28) + datetime.timedelta(days=4)).replace(day=dd)
+        return d.strftime("%a %b %-d")
+    except Exception:
+        return label
+
+def _assess(points):
+    """Per-region closest approach -> [(tier, region, dist_nm, when, r34)], worst first.
+    tier is IMPACT, WATCH, or None."""
+    hits = []
+    for name, lat, lon, tier_ in REGIONS:
+        best = None
+        for (label, la, lo, kt, r34) in points:
+            d = _nm(lat, lon, la, lo)
+            if best is None or d < best[0]:
+                best = (d, label, r34)
+        if best is None:
+            continue
+        d, label, r34 = best
+        t = "IMPACT" if d - r34 <= STORM_IMPACT_NM else "WATCH" if d <= STORM_WATCH_NM else None
+        hits.append((t, name, d, label, r34))
+    rank = {"IMPACT": 2, "WATCH": 1, None: 0}
+    hits.sort(key=lambda h: (-rank[h[0]], h[2]))
+    return hits
+
+def _download_png(url, path):
+    data = _urlopen(url, 30).read()
+    if not data.startswith(b"\x89PNG"):
+        raise ValueError("not a PNG response")
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+def _formation_lines():
+    """One line per TWO paragraph whose 7-day formation chance meets STORM_FORMATION_MIN_PCT."""
+    out = []
+    text = _fetch_text(NHC_TWO_TEXT)
+    for para in re.split(r"\n\s*\n", text):
+        m = re.search(r"Formation chance through 7 days\.+\s*(\w+)\.+\s*(\d+) percent", para, re.I)
+        if not m:
+            continue
+        pct = int(m.group(2))
+        if pct < STORM_FORMATION_MIN_PCT:
+            continue
+        head = para.strip().split("\n")[0].rstrip(":").strip()
+        out.append(f"- **Formation outlook:** {pct}% chance through 7 days ({m.group(1)}) — {head}. "
+                   f"Not yet named; see the 7-day outlook graphic below.")
+    return out
+
+def storm_watch():
+    """Returns (markdown_lines, images, pdf_rows).
+    images: [(key, local_png_path, caption)] in insert order -- the 7-day outlook first, then one
+    forecast cone per named storm. pdf_rows: [(storm, position, assessment)] for the briefing."""
+    stamp = TODAY.strftime("%Y%m%d")
+    lines, images, pdf_rows = [], [], []
+    try:
+        data = _get(NHC_CURRENT)
+    except Exception as e:
+        return ([f"**⛈️ Storm Watch** — unavailable this run (NHC CurrentStorms feed: {e})"], [], [])
+    storms = [s for s in data.get("activeStorms", []) if str(s.get("id", "")).lower().startswith("ep")]
+    hdr_time = ""
+    for s in storms:
+        try:
+            t = datetime.datetime.fromisoformat(str(s.get("lastUpdate", "")).replace("Z", "+00:00")).astimezone()
+            hdr_time = f" · advisory {t.strftime('%a %b %-d %-I:%M %p %Z')}"
+            break
+        except Exception:
+            pass
+    lines.append(f"**⛈️ Storm Watch** _(NOAA National Hurricane Center · East Pacific"
+                 f"{hdr_time}; checked {datetime.datetime.now().strftime('%a %b %-d %-I:%M %p')})_")
+    named = []
+    for s in storms:
+        cls = str(s.get("classification", "")).upper()
+        kt = int(float(s.get("intensity", 0) or 0))
+        long_label, short = _storm_label(cls, kt)
+        name = s.get("name", "?")
+        pts = []
+        try:
+            adv_url = (s.get("forecastAdvisory") or {}).get("url")
+            if adv_url:
+                pts = _parse_tcm(_fetch_text(adv_url))
+        except Exception:
+            pts = []
+        if not pts:
+            pts = [("now", float(s.get("latitudeNumeric")), float(s.get("longitudeNumeric")), kt, 0)]
+        hits = _assess(pts)
+        top = hits[0] if hits else (None, "", 0, "", 0)
+        tier = top[0]
+        # Named storms always print. A depression prints only when it threatens a region.
+        if cls not in ("TS", "HU", "STS") and tier is None:
+            continue
+        named.append(name)
+        pos = f"{s.get('latitude')} {s.get('longitude')}"
+        mv = f"moving {compass(float(s.get('movementDir', 0) or 0))} {int(float(s.get('movementSpeed', 0) or 0))} kt"
+        when = "now" if top[3] == "now" or top[3] == pts[0][0] else _tcm_day_label(top[3])
+        approach = f"closest approach {top[1]} ~{top[2]:,.0f} nm ({when})"
+        if tier == "IMPACT":
+            regs = ", ".join(h[1] for h in hits if h[0] == "IMPACT")
+            verdict = f"🔴 **IMPACT** — 34-kt winds forecast within {STORM_IMPACT_NM} nm of: {regs}"
+        elif tier == "WATCH":
+            regs = ", ".join(h[1] for h in hits if h[0] == "WATCH")
+            verdict = f"🟠 **WATCH** — passes within {STORM_WATCH_NM} nm of: {regs}"
+        else:
+            verdict = "🟢 MONITOR — no regional impact forecast"
+        page = (s.get("forecastGraphics") or {}).get("url") or NHC_EPAC_PAGE
+        lines.append(f"- **{long_label} {name}** ({kt} kt) — {pos}, {mv} · {approach} · {verdict} · "
+                     f"[NHC page]({page})")
+        pdf_rows.append((f"{short} {name} ({kt} kt)", f"{pos}, {mv}", f"{tier or 'MONITOR'} · {approach}"))
+        if len(images) < STORM_MAX_CONES:
+            try:
+                sid = str(s.get("id")).upper()          # e.g. EP142026
+                num = sid[2:4]                          # storm number -> storm_graphics/EP14/
+                cone_url = f"https://www.nhc.noaa.gov/storm_graphics/EP{num}/{sid}_5day_cone.png"
+                slug = re.sub(r"[^a-z0-9]+", "_", name.lower())
+                p = _download_png(cone_url, os.path.join(MAPS_DIR, f"storm_{slug}_{stamp}.png"))
+                images.append((f"storm_{slug}", p, f"{long_label} {name} — NHC 5-day forecast cone"))
+            except Exception as e:
+                lines.append(f"  _(forecast-cone image unavailable: {e})_")
+    if not named:
+        lines.append("- 🟢 No named tropical storms or hurricanes in the East Pacific this week.")
+    try:
+        lines.extend(_formation_lines())
+    except Exception as e:
+        lines.append(f"- _(formation outlook unavailable: {e})_")
+    lines.append(f"- 7-day outlook: [NHC East Pacific graphical outlook]({NHC_TWO_PAGE})")
+    # The 7-day graphic goes FIRST in the storm image set: it shows every disturbance, named or not.
+    try:
+        p = _download_png(NHC_TWO_7DAY, os.path.join(MAPS_DIR, f"storm_outlook_{stamp}.png"))
+        images.insert(0, ("storm_outlook", p, "Tropical / Hurricane — NOAA NHC East Pacific 7-day outlook"))
+    except Exception as e:
+        lines.append(f"  _(7-day outlook image unavailable: {e})_")
+    lines.append(f"_Tiers: IMPACT = 34-kt wind field forecast within {STORM_IMPACT_NM} nm of a report "
+                 f"region in 5 days · WATCH = closest approach under {STORM_WATCH_NM} nm · MONITOR = "
+                 "named storm, no regional threat. Distances are to each region's representative point; "
+                 "NHC track error averages ~100 nm at day 4._")
+    return lines, images, pdf_rows
+
+def stage_inbox(paths):
+    """Copy produced images into Day One's sandbox-readable inbox. Returns the inbox paths in order,
+    or [] if the group container is not present on this Mac."""
+    import shutil
+    parent = os.path.dirname(DAYONE_INBOX)
+    if not os.path.isdir(parent):
+        return []
+    os.makedirs(DAYONE_INBOX, exist_ok=True)
+    out = []
+    for p in paths:
+        dst = os.path.join(DAYONE_INBOX, os.path.basename(p))
+        shutil.copyfile(p, dst)
+        out.append(dst)
+    return out
+
+def build_pdf(week_range, moon_plain, rows, maps, storm=None):
     """Render a single brand-styled Conditions briefing PDF (region tables + 4 maps).
     Returns (mac_path, None) on success or (None, reason) on failure."""
     try:
@@ -407,9 +643,41 @@ def build_pdf(week_range, moon_plain, rows, maps):
                                    ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
                                    ("BOTTOMPADDING", (0, 1), (-1, 1), 10)]))
             story.append(t)
+    # Storm Watch page: text rows + the 7-day outlook + forecast cones.
+    if storm:
+        s_lines, s_images, s_rows = storm
+        story.append(PageBreak())
+        story.append(Paragraph("Storm Watch — NOAA National Hurricane Center (East Pacific)", hsec))
+        body = [["Storm", "Position / motion", "Assessment"]]
+        for r in s_rows:
+            body.append(list(r))
+        if len(body) == 1:
+            body.append(["No named storms", "", "East Pacific clear this week"])
+        tbl = Table(body, colWidths=[1.7*inch, 2.1*inch, 3.3*inch], hAlign="LEFT")
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), NAVY), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 7.8),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f6f8")]),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#dde3ea")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4), ("LEFTPADDING", (0, 0), (-1, -1), 6)]))
+        story.append(tbl)
+        for ln in s_lines[1:]:
+            if ln.startswith("- ") or ln.startswith("_"):
+                txt = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", ln)   # drop markdown links
+                story.append(Paragraph(_plain(txt).replace("&", "&amp;"), cap))
+        for key, local, caption in s_images:
+            try:
+                im = PILImage.open(local)
+                w = 6.6*inch
+                story.append(Spacer(1, 8))
+                story.append(RLImage(local, width=w, height=w * im.height / im.width))
+                story.append(Paragraph(caption, cap))
+            except Exception:
+                pass
     story.append(Paragraph("Numbers: Open-Meteo (wind/swell/SST). Temp-break maps: NOAA MUR 1&nbsp;km SST. "
                            "Water-color maps: DINEOF gap-filled chlorophyll (dataset and lag printed "
-                           "under each map). Moon: ephem. Baja offshore values are modeled.", foot))
+                           "under each map). Storm Watch: NOAA NHC. Moon: ephem. Baja offshore values are modeled.", foot))
     try:
         doc.build(story)
     except Exception as e:
@@ -428,13 +696,35 @@ def main():
     rows = [(name, tier, data[name]["wind"], data[name]["swell"], data[name]["sst"])
             for (name, lat, lon, tier) in REGIONS]
     maps = build_maps()
+    try:
+        storm = storm_watch()
+    except Exception as e:
+        storm = ([f"**⛈️ Storm Watch** — unavailable this run ({e})"], [], [])
     moon_md = moon_line()
-    pdf = build_pdf(rng, _plain(moon_md), rows, maps)
+    pdf = build_pdf(rng, _plain(moon_md), rows, maps, storm)
     prune_old()
+
+    # ---- image set, in entry order: the 4 Conditions maps, then the storm images ----
+    map_order = [("socal_sst", "SoCal — temperature breaks (NOAA MUR SST)"),
+                 ("socal_chl", "SoCal — water color (chlorophyll)"),
+                 ("baja_sst",  "Baja — temperature breaks (NOAA MUR SST)"),
+                 ("baja_chl",  "Baja — water color (chlorophyll)")]
+    cond_images = []
+    for key, caption in map_order:
+        v = maps.get(key)
+        if v and v[0]:
+            cond_images.append((key, os.path.join(MAPS_DIR, os.path.basename(v[0])), caption))
+    storm_lines, storm_images, _ = storm
+    all_images = cond_images + storm_images
+    inbox = stage_inbox([p for _, p, _ in all_images])
+    placeholders = bool(inbox)
+    stamp = TODAY.strftime("%Y%m%d")
+    with open(os.path.join(MAPS_DIR, f"attachments_{stamp}.txt"), "w") as f:
+        f.write("\n".join(inbox) + ("\n" if inbox else ""))
 
     out = []
     out.append(f"## \U0001F30A Conditions — Week of {rng}\n")
-    out.append(moon_line() + "\n")
+    out.append(moon_md + "\n")
     out.append("**Core regions**\n")
     for name, lat, lon, tier in REGIONS:
         if tier != "core": continue
@@ -447,21 +737,37 @@ def main():
         d = data[name]
         out.append(f"- **{name}** — Wind {d['wind']} · Swell {d['swell']} · SST {d['sst']}")
     out.append("")
-    n_maps = sum(1 for k in ("socal_sst", "baja_sst", "socal_chl", "baja_chl") if maps.get(k) and maps[k][0])
+    n_maps = len(cond_images)
     if pdf[0]:
-        out.append(f"📄 **Visual briefing:** the {n_maps} temp-break + water-color maps are embedded "
-                   "below; a one-page PDF copy is also saved to the project folder:")
+        out.append(f"📄 **Visual briefing:** {n_maps} temp-break + water-color maps below; the full "
+                   "briefing (maps + Storm Watch) is also saved as a PDF in the project folder:")
         out.append(f"`{pdf[0]}`")
-        out.append("_(If the maps didn't embed this run, open the PDF from the folder or drag it into "
-                   "this entry.)_")
     else:
         out.append(f"_Visual briefing PDF unavailable this run ({pdf[1]})._")
+    if placeholders:
+        for key, p, caption in cond_images:
+            out.append(f"\n_{caption}_")
+            out.append("[{attachment}]")
+    elif cond_images:
+        out.append("_(Day One inbox not present on this Mac — maps are in the PDF only.)_")
+    out.append("")
+    out.extend(storm_lines)
+    if placeholders:
+        for key, p, caption in storm_images:
+            out.append(f"\n_{caption}_")
+            out.append("[{attachment}]")
+    out.append("")
 
     print("\n".join(out))
-    # Machine-readable footer: the briefing PDF path for the run to reference.
+    # Machine-readable footers: the briefing PDF path, and the ordered attachment list the run
+    # must pass VERBATIM as `attachments=` to create_journal_entry (one [{attachment}] above per line).
     print("\n<!-- BRIEFING")
     if pdf[0]:
         print(pdf[0])
+    print("-->")
+    print("<!-- ATTACHMENTS")
+    for p in inbox:
+        print(p)
     print("-->")
 
 if __name__ == "__main__":

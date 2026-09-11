@@ -3,17 +3,20 @@
 > Local-first weekly fishing-intelligence report for Southern California & Baja. Pipeline:
 > pull YouTube transcripts headlessly (tools/yt_transcript.py; Chrome only as a per-video fallback)
 > + scrape San Diego landing fish counts and long-range boat reports via the Chrome extension AND render a forward-looking Conditions briefing (wind / swell / SST / moon +
-> temperature-break & water-color maps) from free public APIs -> one Day One journal entry, posted
-> every Friday 9:02 AM Pacific. The Conditions section is rendered headlessly (no Chrome) by
-> conditions.py; its numbers are pasted into the report VERBATIM and its maps ship as a one-page PDF.
+> temperature-break & water-color maps + a Storm Watch on named East Pacific tropical storms /
+> hurricanes from NOAA NHC) from free public APIs -> one Day One journal entry, posted every Friday
+> 9:02 AM Pacific. The Conditions section is rendered headlessly (no Chrome) by conditions.py; its
+> text is pasted into the report VERBATIM and its images (maps, NHC 7-day outlook, forecast cones)
+> are attached at save time from Day One's sandbox-readable inbox, positioned by [{attachment}].
 
 ## Start here
 - [AGENTS.md](AGENTS.md): canonical guide for AI agents — what this repo is, the file map, the Conditions data contract, how the run works, how to extend, privacy + verification gates.
 - [README.md](README.md): human quickstart and command reference.
-- [BUILD-PLAN.md](BUILD-PLAN.md): architecture, the data sources we chose and why, and the hard findings (the Day One connector can't embed attachments; maps therefore ship as a PDF).
+- [BUILD-PLAN.md](BUILD-PLAN.md): architecture, the data sources we chose and why, and the hard findings (incl. the Day One sandbox attachment root cause, 2026-09-11).
 
 ## Conditions engine
-- [conditions.py](conditions.py): self-contained generator — Open-Meteo numbers, NOAA MUR temp-break maps, VIIRS+OLCI gap-filled chlorophyll water-color maps, ephem moon, reportlab PDF. No Chrome, no login.
+- [conditions.py](conditions.py): self-contained generator — Open-Meteo numbers, NOAA MUR temp-break maps, VIIRS+OLCI gap-filled chlorophyll water-color maps, NOAA NHC Storm Watch (CurrentStorms.json + TCM advisories + TWO outlook, 7-day outlook + cone PNGs), ephem moon, Day One inbox staging, reportlab PDF. No Chrome, no login.
+- [tools/dayone_attach.sh](tools/dayone_attach.sh): `inbox` (this run's attachable paths), `trigger <uuid>` (open the entry so Day One performs its lazy import; poll the photo count), `list`, `count`.
 - [SPEC-conditions.md](SPEC-conditions.md): the Conditions data contract — regions, coordinates, data sources, the stdout format, and the PDF briefing.
 - [requirements.txt](requirements.txt): Python dependencies for conditions.py.
 
@@ -28,5 +31,6 @@
 ## Key rules
 - Conditions numbers + moon come from `conditions.py` stdout VERBATIM — never hand-write, estimate, or editorialize them.
 - Wind is reported in KNOTS. Baja offshore values are MODELED (no buoys) and labeled as such.
-- The Day One connector cannot embed attachments — maps ship as a dated PDF Ed adds via Day One's "+" button.
+- Day One (sandboxed App Store build) imports attachments only from inside its group container, lazily on first display. Attach the `<!-- ATTACHMENTS -->` inbox paths verbatim, keep every `[{attachment}]`, then `tools/dayone_attach.sh trigger <uuid>`. Never the clipboard-paste path (dead) or files outside the container (blank placeholders).
+- Storm Watch tiers (IMPACT / WATCH / MONITOR) and the formation line are script output — verbatim, no re-grading.
 - Tiered regions: always cover SoCal Bight / Northern Baja / San Clemente-Catalina; add offshore banks (Tanner/Cortez, Cedros/Guadalupe, Mag Bay, The Ridge, Alijos) ONLY when that week's reports mention them.
