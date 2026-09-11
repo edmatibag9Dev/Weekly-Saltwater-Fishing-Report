@@ -59,6 +59,13 @@ never committed.
   source, assessment tiers, ATTACHMENTS contract, inbox copies), BUILD-PLAN §3, llms.txt, CLAUDE.md,
   `samples/conditions_sample.txt` updated.
 
+### Verified — manual validation run, 2026-09-11 10:10 PT
+- Ran the task's SKILL.md end to end in the same environment as the scheduled run (intel reused
+  from the 09:03 run to avoid a second round of YouTube fetches): `conditions.py` OK, entry created
+  with 6 attachments (4 maps + NHC 7-day outlook + Norbert cone), `trigger` → `EMBEDDED=6/6` in 5 s,
+  Slack post in the new format delivered (`alert-sent`), heartbeat `ok`. NHC feeds reachable.
+- Not yet exercised: the cone URL pattern on a second storm (verified on Norbert EP142026 only).
+
 ### Dead ends recorded (do not retry)
 - `dayone://post?…&imageClipboard=1` creates the entry without the image.
 - Attaching from `/tmp`, `~/Documents`, the project folder: blank placeholders (sandbox).
