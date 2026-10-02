@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-10-02] — YouTube channel list: drop two, add H&M Landing
+
+### Changed
+- **Channels now five, not six.** Removed **Dancing on Water** (`@DancingonWater1203`, last upload
+  2026-03-31) and **Arthur Pereira** (`@ArthurPereira1974`, last upload 2026-09-14). Added
+  **H&M Landing** (`@HMLandingsince1935`, channel ID `UCAqIdCD6qFYe43LbRiqaNTA`, resolved from the
+  channel page 2026-10-02). Updated in `tools/yt_transcript.py` `CHANNELS`, SKILL.md Part 1 (and
+  "five channels" / "N of 5" in the Slack template), CLAUDE.md, the AGENTS.md gate-6 example
+  (`--only hm_landing`) and README.
+- **Expect frequent `NO_NEW_VIDEO` from H&M.** On the first test all 5 of its in-window uploads were
+  Shorts (dropped by design); its newest full-length video was 2026-09-22.
+
+### Fixed
+- **`--only` merge kept rows for removed channels.** Merging into an existing same-day manifest
+  sorted by each key's index in `CHANNELS`; a removed key raised `ValueError`, which was swallowed,
+  leaving stale rows in the manifest and on stdout. Rows whose key is no longer in `CHANNELS` are now
+  dropped before the merge.
+
 ## [2026-09-11] — Storm Watch + images that actually embed
 
 ### Added

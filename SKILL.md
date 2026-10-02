@@ -17,14 +17,13 @@ All data is combined into a single structured Day One journal entry.
 
 1. BDoutdoors — https://www.youtube.com/@bdoutdoorsdotcom-m4p
 2. Friedman Adventures Podcast — https://www.youtube.com/@FriedmanAdventuresPodcast
-3. Dancing on Water — https://www.youtube.com/@DancingonWater1203
-4. Arthur Pereira — https://www.youtube.com/@ArthurPereira1974
-5. Chasing Pelagics — https://www.youtube.com/@ChasingPelagics
-6. Fisherman's Landing — https://www.youtube.com/@fishermanslanding
+3. Chasing Pelagics — https://www.youtube.com/@ChasingPelagics
+4. Fisherman's Landing — https://www.youtube.com/@fishermanslanding
+5. H&M Landing — https://www.youtube.com/@HMLandingsince1935
 
 ### Steps — primary path (no Chrome): `tools/yt_transcript.py`
 
-Run ONE command from the project folder. It handles all six channels and needs no browser:
+Run ONE command from the project folder. It handles all five channels and needs no browser:
 
 ```bash
 /usr/bin/python3 tools/yt_transcript.py --days 7
@@ -492,7 +491,7 @@ The script always exits 0 and prints `alert-sent fishing-report-alerts` or `aler
 
 ```
 :fish: *Weekly Saltwater Fishing Report — [Date] posted to Day One.*
-• Sources: YouTube [N of 6 channels with new videos] | SD Landings [4 of 4] | Long Range [N boats]
+• Sources: YouTube [N of 5 channels with new videos] | SD Landings [4 of 4] | Long Range [N boats]
 • Skipped / unavailable: [list any channels with no new video, "transcript unavailable (no captions)", or "transcript extraction failed — retry next run", or "none"]
 • Maps: [N of M images embedded — 4 Conditions maps + NHC 7-day outlook + one cone per named storm; M = lines in the ATTACHMENTS footer]
 • Storm Watch: [one line — e.g. "TS Norbert, MONITOR (~710 nm from Alijos)" / "no named storms" / "IMPACT — Hurricane X, Mag Bay Tue"]

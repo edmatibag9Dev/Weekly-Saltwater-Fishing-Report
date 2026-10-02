@@ -191,7 +191,7 @@ without the image. The URL-scheme and paste paths are documented in CHANGELOG 20
 5. The Day One save passes the `<!-- ATTACHMENTS -->` list verbatim as `attachments=` to
    `create_journal_entry`; `[{attachment}]` count in the text equals the list length; then
    `bash tools/dayone_attach.sh trigger <uuid>` prints `EMBEDDED=N/N` and exits 0.
-6. `/usr/bin/python3 tools/yt_transcript.py --only dancing_on_water` exits 0 and prints a status line.
+6. `/usr/bin/python3 tools/yt_transcript.py --only hm_landing` exits 0 and prints a status line.
    (That channel has had no upload in months, so the check makes zero transcript requests and cannot
    contribute to an IP block; a full 6-channel run is the real test but costs 5–8 fetches.)
 7. Storm Watch: stdout contains `**⛈️ Storm Watch**`; `conditions_maps/storm_outlook_<stamp>.png` is a

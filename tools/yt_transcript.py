@@ -28,10 +28,9 @@ CHANNELS = [
     # key, display name, @handle, channel_id (resolved 2026-09-08; re-resolved at runtime if missing)
     ("bdoutdoors",         "BDoutdoors",                  "bdoutdoorsdotcom-m4p",       "UCyMghGNsPSHZ7DZdy1hJWHw"),
     ("friedman",           "Friedman Adventures Podcast", "FriedmanAdventuresPodcast",  "UCXgdKtE__ZDeFdXuASU-1Eg"),
-    ("dancing_on_water",   "Dancing on Water",            "DancingonWater1203",         "UCwE6Ajn1nJGgy6DkEkM0vEg"),
-    ("arthur_pereira",     "Arthur Pereira",              "ArthurPereira1974",          "UCfUDz5Z-afndDovNFQYnmnQ"),
     ("chasing_pelagics",   "Chasing Pelagics",            "ChasingPelagics",            "UCSLWuDeSNcsKCeDV6ci3R8Q"),
     ("fishermans_landing", "Fisherman's Landing",         "fishermanslanding",          "UCHQB-v-1mIN7IIW1FW4cHdg"),
+    ("hm_landing",         "H&M Landing",                 "HMLandingsince1935",         "UCAqIdCD6qFYe43LbRiqaNTA"),  # added 2026-10-02
 ]
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
@@ -240,7 +239,8 @@ def main():
         try:
             prev = json.load(open(mpath))
             done = {c["key"] for c in manifest["channels"]}
-            manifest["channels"] = [c for c in prev.get("channels", []) if c["key"] not in done] + manifest["channels"]
+            keys = {k for k, *_ in CHANNELS}   # drop rows for channels removed from CHANNELS
+            manifest["channels"] = [c for c in prev.get("channels", []) if c["key"] not in done and c["key"] in keys] + manifest["channels"]
             manifest["channels"].sort(key=lambda c: [k for k, *_ in CHANNELS].index(c["key"]))
         except Exception:
             pass

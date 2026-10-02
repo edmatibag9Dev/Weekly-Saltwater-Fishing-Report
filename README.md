@@ -8,7 +8,7 @@ SST, moon, and temperature-break + water-color maps) built entirely from free pu
 ## Overview / Purpose
 
 This answers "what's been biting, where, and what will the water be doing this week?" A Cowork
-scheduled task (Friday 9:02 AM Pacific) pulls the week's transcripts from six YouTube channels
+scheduled task (Friday 9:02 AM Pacific) pulls the week's transcripts from five YouTube channels
 headlessly (`tools/yt_transcript.py` — channel feeds + `youtube_transcript_api`, Chrome only as a
 per-video fallback), scrapes four San Diego landings and LongRangeSportfishing.net through the Chrome
 extension, then runs a headless **Conditions engine** (`conditions.py`) that pulls live numbers and

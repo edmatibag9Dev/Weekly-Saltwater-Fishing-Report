@@ -54,10 +54,9 @@ The `SKILL.md` in this project folder is the **working reference copy** — keep
 
 1. BDoutdoors — https://www.youtube.com/@bdoutdoorsdotcom-m4p
 2. Friedman Adventures Podcast — https://www.youtube.com/@FriedmanAdventuresPodcast
-3. Dancing on Water — https://www.youtube.com/@DancingonWater1203
-4. Arthur Pereira — https://www.youtube.com/@ArthurPereira1974
-5. Chasing Pelagics — https://www.youtube.com/@ChasingPelagics
-6. Fisherman's Landing — https://www.youtube.com/@fishermanslanding
+3. Chasing Pelagics — https://www.youtube.com/@ChasingPelagics
+4. Fisherman's Landing — https://www.youtube.com/@fishermanslanding
+5. H&M Landing — https://www.youtube.com/@HMLandingsince1935
 
 To add or remove channels: edit SKILL.md Part 1.
 
