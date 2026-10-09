@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-10-09] — Conform to repo standard 2026-10-09
+
+### Changed
+- AGENTS.md: added the `Standard:` stamp; renamed "The Conditions data contract" → "The data contract (Conditions — …)" and "How the run works" → "How it works" so the seven required sections carry the standard headings; moved "The attachment mechanics" after Verification gates (repo-specific sections go last); added a final gate that runs `repo-check.py`; added `CONFIG.local.md` to the File map.
+- AGENTS.md: the pasted "What to Stage — Never Commit Blindly" block (identical to CONTRIBUTING.md) is replaced by a one-line link to CONTRIBUTING.md.
+- README.md: split "Overview / Purpose" and "Known Limitations / Workarounds" into separate sections, renamed "Files" → "File Descriptions" (added `SETUP.md`, `llms.txt`, `.gitignore`, `past-reports/`, `CONFIG.local.md`), and folded "Configuration", "Update / Refresh Instructions" (under How to Use) and "Troubleshooting" (under Workarounds) in as subsections. `Last updated` is now 2026-10-09.
+- .gitignore: added `.env`, `.env.*`, `!.env.example`, `.venv/`, `node_modules/`, `*.bak*`.
+
 ## [2026-10-02] — YouTube channel list: drop two, add H&M Landing
 
 ### Changed

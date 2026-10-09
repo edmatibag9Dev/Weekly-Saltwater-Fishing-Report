@@ -19,3 +19,11 @@ __pycache__/
 
 # Weekly YouTube transcript pulls (third-party content, regenerated each run; pruned after ~8 weeks)
 youtube_transcripts/
+
+# Secrets, local environments and backups (repo standard 2026-10-09)
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+*.bak*

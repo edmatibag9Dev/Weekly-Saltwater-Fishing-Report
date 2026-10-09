@@ -1,4 +1,5 @@
 # AGENTS.md — guide for AI agents working in this repo
+> Standard: REPO-STANDARD 2026-10-09 · Commits, README and staging: CONTRIBUTING.md
 
 This file is the canonical entry point for any AI agent (Claude Code, Cowork, Codex, etc.)
 asked to **use, reference, extend, or rebuild** this project. Read it before acting.
@@ -33,8 +34,8 @@ retrospective catch intel below it.
 | `SPEC-conditions.md` | yes | The Conditions data contract — regions, coords, sources, stdout format, PDF. |
 | `SCHEDULE.md` | yes | How the weekly Cowork scheduled task is configured/edited. |
 | `CHANGELOG.md` | yes | Notable changes (Keep a Changelog). |
-| `CONTRIBUTING.md` | yes | Ed's global commit + doc standards. |
-| `.gitignore` | yes | Excludes generated output + real/personal data (maps, briefings, archives, `CONFIG.local.md`, `__pycache__`); keeps `samples/` committed. |
+| `CONTRIBUTING.md` | yes | Verbatim copy of `~/.claude/CONTRIBUTING.md`: commit format, README sections, staging rules. |
+| `.gitignore` | yes | Excludes generated output + real/personal data (maps, briefings, transcripts, archives, `CONFIG.local.md`, `.env*`, `__pycache__`, `.venv/`, `node_modules/`, `*.bak*`); keeps `samples/` committed. |
 | `conditions.py` | yes | The Conditions engine — numbers, maps, moon, Storm Watch (NOAA NHC), Day One inbox staging, PDF. No Chrome, no login. |
 | `requirements.txt` | yes | Python deps for `conditions.py`. |
 | `SETUP.md` | yes | Connector setup / troubleshooting. |
@@ -46,8 +47,9 @@ retrospective catch intel below it.
 | `conditions_briefings/` | **no (gitignored)** | Dated PDF briefings generated each run. |
 | `youtube_transcripts/` | **no (gitignored)** | Per-run transcript pulls + manifest (third-party content; auto-pruned >8 wks). |
 | `past-reports/` | **no (gitignored)** | Optional local archive of exported entries. |
+| `CONFIG.local.md` | **no (gitignored)** | Local-only real alert identifiers (email, Slack workspace/channel) that the committed docs carry as placeholders. |
 
-## The Conditions data contract (`conditions.py` stdout)
+## The data contract (Conditions — `conditions.py` stdout)
 
 `conditions.py` is the single source of truth for the Conditions section. The run pastes its
 stdout **verbatim**. The shape is stable:
@@ -105,7 +107,7 @@ Rules an agent must preserve:
 - **Storm Watch is script output too.** Do not re-grade a storm, change a tier, or add storm
   commentary; the tiers are defined in SPEC-conditions.md.
 
-## How the run works
+## How it works
 
 1. **YouTube (no Chrome).** `/usr/bin/python3 tools/yt_transcript.py --days 7` — one status line
    per channel; only `FETCH_FAILED` / `FEED_FAILED` channels fall back to the Chrome UI method kept in
@@ -122,27 +124,6 @@ Rules an agent must preserve:
 4. **Notify.** Post a success summary to Slack (`#fishing-report-alerts`) including the PDF path as a
    reminder for Ed to drop the PDF into the entry. On error, alert via Gmail + Slack (Apple Notes
    fallback). See SKILL.md.
-
-## The attachment mechanics (important — root-caused 2026-09-11)
-
-Day One on this Mac is the **sandboxed App Store build** (`com.apple.security.app-sandbox` on both
-the app and the bundled `dayone` CLI). Two facts follow, both verified 2026-09-11:
-1. The attachment import can only read files **inside the app's group container**
-   (`~/Library/Group Containers/5U8NS4GX82.dayoneapp2/…`). A path under `/tmp`, `~/Documents`, or
-   the project folder records a moment but never imports the bytes → the "blank placeholder" that
-   was misdiagnosed in June as "the connector is broken".
-2. The import is **lazy**: the bytes are read the first time the entry is displayed. A just-created
-   entry shows `ZHASDATA=0` until something opens it; `open "dayone://edit?entryId=<uuid>"` completes
-   the import in ~5 s.
-
-Therefore `conditions.py` copies every image to `…/Data/Documents/CLI-Inbox/`, the run attaches those
-paths (positioned by `[{attachment}]`), and `tools/dayone_attach.sh trigger <uuid>` opens the entry
-and polls `count` until it matches. The PDF remains a portable fallback.
-
-**Dead ends — do not retry them:** clipboard paste via System Events keystrokes, the Edit ▸ Paste
-menu item, and hardware-level CGEvent Cmd+V all reach Day One but its editor ignores them (0 of 4 on
-every scheduled run 2026-07-31 → 2026-09-11). `dayone://post?imageClipboard=1` creates the entry
-without the image. The URL-scheme and paste paths are documented in CHANGELOG 2026-09-11.
 
 ## How to extend
 
@@ -175,7 +156,10 @@ without the image. The URL-scheme and paste paths are documented in CHANGELOG 20
 - Never commit the gitignored folders (`conditions_maps/`, `conditions_briefings/`, `past-reports/`).
 - The Conditions data is public weather/satellite data — safe to share; sample PDFs are fine to commit.
 
-## Verification gates (run before declaring a change done)
+## Verification gates
+
+Run before declaring a change done:
+
 1. `python3 conditions.py` exits 0, prints the Conditions text, and writes a non-empty PDF to
    `conditions_briefings/conditions_YYYYMMDD.pdf`.
 2. Wind is in knots; every region row has wind + swell + SST; Baja offshore rows say "modeled".
@@ -198,57 +182,34 @@ without the image. The URL-scheme and paste paths are documented in CHANGELOG 20
    real PNG; with a named storm active, `storm_<name>_<stamp>.png` exists and the storm line carries a
    tier and an NHC link. `conditions_maps/attachments_<stamp>.txt` lists every image in entry order.
    A quick offline check of the track parser: `python3 -c "import conditions as c; print(c._assess(c._parse_tcm(open('samples/tcm_sample.txt').read()))[:3])"`.
+8. `python3 ~/.claude/skills/repo-standard/scripts/repo-check.py .` reports no FAIL lines.
 
 ---
 
-## What to Stage — Never Commit Blindly
+## The attachment mechanics (important — root-caused 2026-09-11)
 
-Staging is part of the commit, not a detail beneath it. A commit records what you
-staged, so an unconditional stage records whatever state the working tree happens
-to be in — including damage you did not cause and did not notice.
+Day One on this Mac is the **sandboxed App Store build** (`com.apple.security.app-sandbox` on both
+the app and the bundled `dayone` CLI). Two facts follow, both verified 2026-09-11:
+1. The attachment import can only read files **inside the app's group container**
+   (`~/Library/Group Containers/5U8NS4GX82.dayoneapp2/…`). A path under `/tmp`, `~/Documents`, or
+   the project folder records a moment but never imports the bytes → the "blank placeholder" that
+   was misdiagnosed in June as "the connector is broken".
+2. The import is **lazy**: the bytes are read the first time the entry is displayed. A just-created
+   entry shows `ZHASDATA=0` until something opens it; `open "dayone://edit?entryId=<uuid>"` completes
+   the import in ~5 s.
 
-### Rules
+Therefore `conditions.py` copies every image to `…/Data/Documents/CLI-Inbox/`, the run attaches those
+paths (positioned by `[{attachment}]`), and `tools/dayone_attach.sh trigger <uuid>` opens the entry
+and polls `count` until it matches. The PDF remains a portable fallback.
 
-- **Stage named paths.** `git add <path> <path>` — only the files your change
-  actually touched. You should be able to say why each one is in the commit.
-- **Never `git add -A`, `git add .`, `git add --all`, or `git commit -a`** in a
-  repository that already has history. Use them only to bootstrap a fresh
-  `git init`, and verify the staged list before that first commit.
-- **Check for deletions before every commit:**
+**Dead ends — do not retry them:** clipboard paste via System Events keystrokes, the Edit ▸ Paste
+menu item, and hardware-level CGEvent Cmd+V all reach Day One but its editor ignores them (0 of 4 on
+every scheduled run 2026-07-31 → 2026-09-11). `dayone://post?imageClipboard=1` creates the entry
+without the image. The URL-scheme and paste paths are documented in CHANGELOG 2026-09-11.
 
-  ```
-  git diff --cached --name-status --diff-filter=D
-  ```
+---
 
-  If that prints anything you did not deliberately delete, STOP. Unstage with
-  `git reset`, find out why the file is missing, and restore it. Do not commit
-  the removal.
-- **A file missing from the working tree is not a change.** It is a filesystem,
-  sync-client, or tooling problem. Committing its deletion converts a recoverable
-  accident into recorded history and destroys the git copy that would have
-  restored it.
-- **Untracked is not protected.** A file that was never committed has no git copy
-  at all. If a working file matters, commit it or ignore it deliberately — never
-  leave it untracked by accident.
+## Staging
 
-### Staging self-check
-
-- [ ] Staged named paths only — no `-A`, no `.`, no `-a`
-- [ ] `git diff --cached --name-status --diff-filter=D` shows nothing unintended
-- [ ] Every staged path belongs to the change described in the commit message
-
-### Why this rule exists
-
-On 2026-08-30, commit `3df1d05` in the ai-briefing repo — a routine data commit —
-was staged unconditionally while two files were missing from the working tree. A
-two-way sync client had deleted them nine days earlier. The commit recorded both
-deletions, removing the last recoverable copies from git and leaving the sync
-client's quarantine folder as the only source. They were recovered, but only
-because that quarantine had not yet been purged on its retention timer.
-
-The same pattern nearly caused a data leak once before: an untracked `reports/`
-folder holding local absolute paths and an email address sat in a public repo,
-where any `git add .` would have swept it into a public commit.
-
-Unconditional staging fails in both directions. It commits what should never be
-published, and it deletes what should never be lost.
+Stage named paths only and check for deletions before every commit — the full rule is
+"What to Stage — Never Commit Blindly" in [CONTRIBUTING.md](CONTRIBUTING.md).

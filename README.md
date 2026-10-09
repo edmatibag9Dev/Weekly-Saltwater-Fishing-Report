@@ -5,18 +5,20 @@ compiles YouTube fishing intel, San Diego landing fish counts, and long-range bo
 single **Day One** journal entry — led by a forward-looking **Conditions** briefing (wind, swell,
 SST, moon, and temperature-break + water-color maps) built entirely from free public data.
 
-## Overview / Purpose
+## Project Overview
 
-This answers "what's been biting, where, and what will the water be doing this week?" A Cowork
-scheduled task (Friday 9:02 AM Pacific) pulls the week's transcripts from five YouTube channels
+A Cowork scheduled task (Friday 9:02 AM Pacific) pulls the week's transcripts from five YouTube channels
 headlessly (`tools/yt_transcript.py` — channel feeds + `youtube_transcript_api`, Chrome only as a
 per-video fallback), scrapes four San Diego landings and LongRangeSportfishing.net through the Chrome
 extension, then runs a headless **Conditions engine** (`conditions.py`) that pulls live numbers and
 renders maps and pulls NOAA National Hurricane Center storm data with no Chrome and no logins.
 Everything lands in one Day One entry: the Conditions maps and the NHC storm graphics are attached
 at save time from Day One's sandbox-readable inbox and positioned inline with `[{attachment}]`
-placeholders, with a PDF built alongside as a portable fallback. Built for Ed, who reads the report
-on Day One's desktop and mobile apps.
+placeholders, with a PDF built alongside as a portable fallback.
+
+## Purpose
+
+This answers "what's been biting, where, and what will the water be doing this week?" Built for Ed, who reads the report on Day One's desktop and mobile apps.
 
 ## Features
 
@@ -40,7 +42,7 @@ on Day One's desktop and mobile apps.
   is non-fatal (the report still posts).
 - **Honest data** — Baja offshore values are labeled "modeled"; the run never invents numbers.
 
-## Files
+## File Descriptions
 
 | File | Role |
 |---|---|
@@ -56,7 +58,11 @@ on Day One's desktop and mobile apps.
 | `tools/dayone_attach.sh` | `inbox` (this run's attachable paths), `trigger <uuid>` (open the entry so Day One imports the attachments; poll the count), `list`, `count` |
 | `samples/` | Committed sample stdout, PDF, and a TCM advisory for the offline parser check |
 | `requirements.txt` | Python deps for `conditions.py` |
+| `SETUP.md` | Connector setup / troubleshooting |
+| `llms.txt` | Machine-readable index of the repo's docs for AI agents |
+| `.gitignore` | Keeps generated output, transcripts, `CONFIG.local.md`, secrets and caches out of git; `samples/` stays committed |
 | `conditions_maps/`, `conditions_briefings/`, `youtube_transcripts/` | Generated outputs (gitignored; auto-pruned after ~8 weeks) |
+| `past-reports/`, `CONFIG.local.md` | Optional local archive of exported entries; local-only real alert identifiers (both gitignored) |
 
 ## How to Use
 
@@ -97,12 +103,36 @@ bash tools/dayone_attach.sh trigger "<uuid>"   # opens the entry, polls until EM
 Only paths inside `~/Library/Group Containers/5U8NS4GX82.dayoneapp2/…` import — the App Store build
 is sandboxed. Attaching from `/tmp` or `~/Documents` records a blank placeholder.
 
-## Configuration
+### Configuration
 
 Personal settings live in `SKILL.md` / `CLAUDE.md`: the alert **email**, the **Slack** workspace +
 `#fishing-report-alerts` channel ID, and the Day One **journal** name ("Saltwater Fishing Journal").
 On a public clone, replace these with your own (or scrub to placeholders and keep real values in a
 gitignored `CONFIG.local.md`).
+
+### Update / Refresh Instructions
+
+The weekly run is automated — the Cowork scheduled task fires Friday 9:02 AM Pacific (see
+`SCHEDULE.md`) and needs Chrome open with the Claude in Chrome extension active for the landing and
+long-range scrape (and the YouTube fallback). To refresh manually:
+
+```bash
+cd ~/Documents/Claude/Projects/"Weekly Saltwater Fishing Report"
+pip install -r requirements.txt --break-system-packages -q   # first run in a fresh environment
+/usr/bin/python3 tools/yt_transcript.py --days 7             # this week's YouTube transcripts, no Chrome
+python3 conditions.py                                        # re-fetches live data every run
+```
+
+`conditions.py` is safe to re-run and overwrites the current date's maps and PDF in place;
+`conditions_maps/` and `conditions_briefings/` self-prune beyond ~8 weeks. To change the monitored
+sources edit `SKILL.md` (Parts 1–3); to move or add a Conditions region edit `REGIONS` in
+`conditions.py` and mirror it in `SPEC-conditions.md`. After editing `SKILL.md`, sync the project
+copy and the live scheduled copy at
+`~/.claude/scheduled-tasks/weekly-saltwater-fishing-report/SKILL.md` — they have drifted before, with
+the live copy ahead. **The two are identical except for config scrubbing:** the committed copy must
+keep `<ALERT_EMAIL>`, `<SLACK_WORKSPACE>` and `<SLACK_CHANNEL_ID>` as placeholders (real values live
+only in the scheduled copy and the gitignored `CONFIG.local.md`), so re-apply the scrub after any
+copy from the live file into this repo.
 
 ## Data Sources
 
@@ -118,39 +148,51 @@ gitignored `CONFIG.local.md`).
 
 All sources are public HTTP with no keys or logins.
 
-## Known Limitations / Workarounds
+## Known Limitations
 
-- Day One is the sandboxed App Store build: attachments import only from inside its group container,
-  and only when the entry is first displayed. `conditions.py` stages the images in `CLI-Inbox/`, the
+- **Day One attachments.** Day One is the sandboxed App Store build: attachments import only from inside its group container,
+  and only when the entry is first displayed.
+- **Storm Watch thresholds.** Storm Watch thresholds (60 nm / 300 nm / 60%) are this report's conventions, not NHC guidance; NHC's
+  own day-4 track error averages ~100 nm and the block says so. The cone URL pattern was verified on
+  one storm (Norbert, EP142026).
+- **Satellite/model data.** Conditions data is satellite/model-derived: NOAA MUR SST lags ~1 day, chlorophyll ~2 days on the
+  near-real-time product (~11 on the science-quality backstops), and Baja offshore has no buoys —
+  useful for planning, not ground truth.
+- **Image count varies.** Fewer images is normal
+  when a source is down and the placeholder count always matches.
+- **Unreadable photo count.** `dayone_attach.sh count` prints `?` (not `0`) when the Day One database cannot be read — it reads
+  a snapshot copy under an 8 s cap so it can never hang PART 5 (it did on 2026-08-07).
+- **YouTube rate limits.** YouTube can rate-limit the transcript library (`IpBlocked` / `RequestBlocked`). Hit on
+  2026-09-08 after ~20 fetches in 10 minutes of testing; a normal weekly run makes 5–8.
+- **Shorts in channel feeds.** Channel feeds include Shorts and do not flag them.
+- **Seven-day window.** The 7-day window is hour-granular (now − 7 × 24 h). A Tuesday post against a Friday run leaves a
+  3-day margin; a run that slips a day can miss it.
+
+## Workarounds
+
+- **Day One attachments.** `conditions.py` stages the images in `CLI-Inbox/`, the
   run attaches those paths, and `tools/dayone_attach.sh trigger` opens the entry and verifies the
   count. The clipboard-paste method it replaces never embedded a map on a scheduled run (0/4 from
   2026-07-31 to 2026-09-11) and is deprecated. If the count comes up short, the run still posts and
   the Slack message asks Ed to open the entry (which completes the import) or drag the PDF in.
-- Storm Watch thresholds (60 nm / 300 nm / 60%) are this report's conventions, not NHC guidance; NHC's
-  own day-4 track error averages ~100 nm and the block says so. The cone URL pattern was verified on
-  one storm (Norbert, EP142026).
-- Conditions data is satellite/model-derived: NOAA MUR SST lags ~1 day, chlorophyll ~2 days on the
-  near-real-time product (~11 on the science-quality backstops), and Baja offshore has no buoys —
-  useful for planning, not ground truth.
-- Attach only the current run's images. The ATTACHMENTS footer and `attachments_<stamp>.txt` are
-  rewritten each run and `dayone_attach.sh list` / `inbox` are date-scoped; fewer images is normal
-  when a source is down and the placeholder count always matches.
-- `dayone_attach.sh count` prints `?` (not `0`) when the Day One database cannot be read — it reads
-  a snapshot copy under an 8 s cap so it can never hang PART 5 (it did on 2026-08-07). Treat `?` as
+- **Storm Watch thresholds.** No workaround for the thresholds themselves. If a new storm's cone
+  404s, check the storm's graphics page (see Troubleshooting below).
+- **Satellite/model data.** No workaround.
+- **Image count varies.** Attach only the current run's images. The ATTACHMENTS footer and `attachments_<stamp>.txt` are
+  rewritten each run and `dayone_attach.sh list` / `inbox` are date-scoped.
+- **Unreadable photo count.** Treat `?` as
   "unknown", never as "no photos embedded".
-- **YouTube can rate-limit the transcript library** (`IpBlocked` / `RequestBlocked`). Hit on
-  2026-09-08 after ~20 fetches in 10 minutes of testing; a normal weekly run makes 5–8. The script
+- **YouTube rate limits.** The script
   stops fetching at the first block and marks the remaining channels `FETCH_FAILED … not attempted`;
   those go through the Chrome fallback, which was verified to still work from the same IP while the
   library was blocked. Re-running the script only deepens the block.
-- **Channel feeds include Shorts** and do not flag them. The script probes `youtube.com/shorts/<id>`
+- **Shorts in channel feeds.** The script probes `youtube.com/shorts/<id>`
   (HTTP 200 = Short, 303 = normal video) and skips them; on 2026-09-08 three of Fisherman's Landing's
   six newest uploads were 20-second clips with no captions. If the probe errors twice the video is
   treated as normal and a `⚠` is printed rather than risk dropping a real report.
-- The 7-day window is hour-granular (now − 7 × 24 h). A Tuesday post against a Friday run leaves a
-  3-day margin; a run that slips a day can miss it — `--days 8` widens the window if that recurs.
+- **Seven-day window.** `--days 8` widens the window if a missed post recurs.
 
-## Troubleshooting
+### Troubleshooting
 
 - **Water-color maps missing.** Most likely a retired ERDDAP dataset ID, not a transient outage —
   this is exactly how `noaacwNPPN20S3ASCIDINEOF2kmDaily` failed in July 2026 (it began returning
@@ -200,29 +242,5 @@ fast on permanent 4xx. Chlorophyll goes through an ordered dataset chain because
 get retired without notice — the original 2 km product 404'd in July 2026 and silently cost a run
 both water-color maps, which is why every map footer now prints the dataset and its computed lag.
 
-## Update / Refresh Instructions
-
-The weekly run is automated — the Cowork scheduled task fires Friday 9:02 AM Pacific (see
-`SCHEDULE.md`) and needs Chrome open with the Claude in Chrome extension active for the landing and
-long-range scrape (and the YouTube fallback). To refresh manually:
-
-```bash
-cd ~/Documents/Claude/Projects/"Weekly Saltwater Fishing Report"
-pip install -r requirements.txt --break-system-packages -q   # first run in a fresh environment
-/usr/bin/python3 tools/yt_transcript.py --days 7             # this week's YouTube transcripts, no Chrome
-python3 conditions.py                                        # re-fetches live data every run
-```
-
-`conditions.py` is safe to re-run and overwrites the current date's maps and PDF in place;
-`conditions_maps/` and `conditions_briefings/` self-prune beyond ~8 weeks. To change the monitored
-sources edit `SKILL.md` (Parts 1–3); to move or add a Conditions region edit `REGIONS` in
-`conditions.py` and mirror it in `SPEC-conditions.md`. After editing `SKILL.md`, sync the project
-copy and the live scheduled copy at
-`~/.claude/scheduled-tasks/weekly-saltwater-fishing-report/SKILL.md` — they have drifted before, with
-the live copy ahead. **The two are identical except for config scrubbing:** the committed copy must
-keep `<ALERT_EMAIL>`, `<SLACK_WORKSPACE>` and `<SLACK_CHANNEL_ID>` as placeholders (real values live
-only in the scheduled copy and the gitignored `CONFIG.local.md`), so re-apply the scrub after any
-copy from the live file into this repo.
-
 ---
-_Last updated: 2026-07-31_
+*Last updated: 2026-10-09*
