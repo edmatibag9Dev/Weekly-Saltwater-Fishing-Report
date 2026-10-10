@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-10-10] — Digest row text shape in footer
+
+### Changed
+- **`SKILL.md`** — the Lane-2 digest template now carries the `text` shape rule: one opening
+  sentence of 90 characters or fewer stating the finding, then one sentence per supporting point
+  (Mission Control shows the first as the headline and the rest as bullets). Runtime master updated
+  the same day.
+
 ## [2026-10-10] — Fix docs that contradicted the code
 
 ### Fixed
