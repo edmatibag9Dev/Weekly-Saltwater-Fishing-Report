@@ -14,7 +14,7 @@ reports via the Chrome extension, and renders a forward-looking **Conditions** b
 swell / SST / moon + temperature-break & water-color maps + a **Storm Watch** on named East Pacific
 tropical storms / hurricanes from NOAA's National Hurricane Center) from free public APIs.
 
-Design in one line: **6 YouTube channels (headless, Chrome fallback) + 4 SD landings + long-range
+Design in one line: **5 YouTube channels (headless, Chrome fallback) + 4 SD landings + long-range
 reports (Chrome) + a headless Conditions engine (no Chrome) → one Day One entry, with the maps and
 NHC storm graphics attached inline at save time (and bundled in a PDF).**
 

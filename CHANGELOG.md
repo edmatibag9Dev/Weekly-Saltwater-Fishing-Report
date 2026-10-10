@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/); dates are Americ
 Generated outputs (`conditions_maps/`, `conditions_briefings/`, `past-reports/`) are gitignored and
 never committed.
 
+## [2026-10-10] — Fix docs that contradicted the code
+
+### Fixed
+- AGENTS.md design line and README Data Sources now say 5 YouTube channels, matching `CHANNELS` in `tools/yt_transcript.py` (five since 2026-10-02).
+
 ## [2026-10-09] — Conform to repo standard 2026-10-09
 
 ### Changed

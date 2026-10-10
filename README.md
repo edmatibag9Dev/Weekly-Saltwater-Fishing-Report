@@ -143,7 +143,7 @@ copy from the live file into this repo.
 | [NOAA CoastWatch ERDDAP](https://coastwatch.noaa.gov/erddap/) — `CHL_DATASETS` chain: `noaacwNPPN20VIIRSDINEOFDaily` → `noaacwNPPN20S3ASCIDINEOFDaily` → `noaacwNPPN20VIIRSSCIDINEOFDaily` | Water-color (chlorophyll) maps | ~2-day lag (NRT) / ~11-day (science backstops) |
 | [NOAA National Hurricane Center](https://www.nhc.noaa.gov/?epac) — `CurrentStorms.json`, `text/MIATCMEP<n>.shtml` (forecast/advisory), `text/MIATWOEP.shtml` (outlook), `xgtwo/two_pac_7d0.png`, `storm_graphics/EP<nn>/<ID>_5day_cone.png` | Storm Watch tiers, formation odds, 7-day outlook + cone images | Advisories every 6 h; outlook 4×/day |
 | `ephem` | Moon phase + illumination | Computed, no network |
-| 6 YouTube channels — public Atom feed (`youtube.com/feeds/videos.xml?channel_id=…`) + [`youtube_transcript_api`](https://pypi.org/project/youtube-transcript-api/) 1.2.4 | Bite intel, lures, locations | Newest captioned non-Short upload in the last 7 days; Chrome UI is the per-video fallback |
+| 5 YouTube channels — public Atom feed (`youtube.com/feeds/videos.xml?channel_id=…`) + [`youtube_transcript_api`](https://pypi.org/project/youtube-transcript-api/) 1.2.4 | Bite intel, lures, locations | Newest captioned non-Short upload in the last 7 days; Chrome UI is the per-video fallback |
 | [sandiegofishreports.com](https://www.sandiegofishreports.com/) · [longrangesportfishing.net](https://www.longrangesportfishing.net/fishreports.php) | Dock counts, boat reports | Scraped weekly via Chrome |
 
 All sources are public HTTP with no keys or logins.
@@ -243,4 +243,4 @@ get retired without notice — the original 2 km product 404'd in July 2026 and 
 both water-color maps, which is why every map footer now prints the dataset and its computed lag.
 
 ---
-*Last updated: 2026-10-09*
+*Last updated: 2026-10-10*
